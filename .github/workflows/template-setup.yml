@@ -1,0 +1,75 @@
+name: Template Setup
+
+# This workflow runs ONCE when a new repo is created from the template.
+# It replaces placeholder values and cleans up template files.
+# Triggered by the user pushing a modified `template-config.json` file.
+
+on:
+  push:
+    paths:
+      - 'template-config.json'
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read config and check if modified
+        id: config
+        run: |
+          PROJECT_NAME=$(jq -r '.project_name' template-config.json)
+
+          # Skip if the config still has the default template value
+          if [ "$PROJECT_NAME" = "ai-data-registry" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Config still has default values — skipping (this is the template repo)."
+            exit 0
+          fi
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "project_name=$PROJECT_NAME" >> "$GITHUB_OUTPUT"
+          echo "author_name=$(jq -r '.author_name' template-config.json)" >> "$GITHUB_OUTPUT"
+          echo "author_email=$(jq -r '.author_email' template-config.json)" >> "$GITHUB_OUTPUT"
+          echo "description=$(jq -r '.description' template-config.json)" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r '.version // "0.1.0"' template-config.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Replace placeholders
+        if: steps.config.outputs.skip != 'true'
+        run: |
+          PROJECT_NAME="${{ steps.config.outputs.project_name }}"
+          AUTHOR_NAME="${{ steps.config.outputs.author_name }}"
+          AUTHOR_EMAIL="${{ steps.config.outputs.author_email }}"
+          DESCRIPTION="${{ steps.config.outputs.description }}"
+          VERSION="${{ steps.config.outputs.version }}"
+
+          # pixi.toml
+          sed -i \
+            -e "s|name = \"ai-data-registry\"|name = \"${PROJECT_NAME}\"|g" \
+            -e "s|authors = \[.*\]|authors = [\"${AUTHOR_NAME} <${AUTHOR_EMAIL}>\"]|g" \
+            -e "s|version = \"0.1.0\"|version = \"${VERSION}\"|g" \
+            pixi.toml
+
+          # CLAUDE.md and .claude/ files
+          sed -i "s|ai-data-registry|${PROJECT_NAME}|g" CLAUDE.md
+          find .claude -name '*.md' -exec sed -i "s|ai-data-registry|${PROJECT_NAME}|g" {} \;
+
+      - name: Clean up template files
+        if: steps.config.outputs.skip != 'true'
+        run: |
+          rm -f setup.sh
+          rm -f setup.ps1
+          rm -f template-config.json
+          rm -f .github/workflows/template-setup.yml
+
+      - name: Commit changes
+        if: steps.config.outputs.skip != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Initialize ${{ steps.config.outputs.project_name }} from template"
+          git push
