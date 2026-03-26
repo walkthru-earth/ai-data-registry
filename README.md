@@ -22,6 +22,37 @@ Geospatial data processing template with a full AI-powered development ecosystem
 
 ## Quick Start
 
+### Prerequisites
+
+#### Pixi (required)
+
+| Platform | Command |
+|----------|---------|
+| **macOS** (Homebrew) | `brew install pixi` |
+| **macOS / Linux** | `curl -fsSL https://pixi.sh/install.sh \| bash` |
+| **Windows** (winget) | `winget install prefix-dev.pixi` |
+| **Windows** (PowerShell) | `iwr -useb https://pixi.sh/install.ps1 \| iex` |
+
+See [pixi.sh](https://pixi.sh) for more options.
+
+#### Claude Code (recommended)
+
+This template includes a full [Claude Code](https://docs.anthropic.com/en/docs/claude-code) ecosystem — skills, agents, rules, and slash commands for AI-assisted geospatial development.
+
+| Platform | Command |
+|----------|---------|
+| **macOS / Linux** | `curl -fsSL https://claude.ai/install.sh \| bash` |
+| **macOS** (Homebrew) | `brew install --cask claude-code` |
+| **Windows** (PowerShell) | `irm https://claude.ai/install.ps1 \| iex` |
+| **Windows** (WinGet) | `winget install Anthropic.ClaudeCode` |
+
+> **Note:** Windows requires [Git for Windows](https://git-scm.com/download/win) installed first.
+
+After installation, start Claude Code in your project directory:
+```bash
+claude
+```
+
 ### From Template (GitHub)
 
 1. Click **"Use this template"** → **"Create a new repository"**
@@ -35,19 +66,6 @@ Geospatial data processing template with a full AI-powered development ecosystem
    .\setup.ps1
    ```
 4. Or edit `template-config.json` and push — GitHub Actions will auto-configure.
-
-### Install Pixi
-
-If you don't have pixi installed:
-
-| Platform | Command |
-|----------|---------|
-| **macOS** (Homebrew) | `brew install pixi` |
-| **macOS / Linux** | `curl -fsSL https://pixi.sh/install.sh \| bash` |
-| **Windows** (winget) | `winget install prefix-dev.pixi` |
-| **Windows** (PowerShell) | `iwr -useb https://pixi.sh/install.ps1 \| iex` |
-
-See [pixi.sh](https://pixi.sh) for more options.
 
 ### Manual Setup
 
