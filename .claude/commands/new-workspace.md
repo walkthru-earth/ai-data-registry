@@ -14,7 +14,7 @@ Follow the workspace rules in `.claude/rules/workspaces.md`.
 
 2. **Create and initialize the workspace** (from project root)
 ```bash
-pixi run python -c "import pathlib; pathlib.Path('$0').mkdir(exist_ok=True)"
+mkdir $0
 cd $0
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
 cd ..
