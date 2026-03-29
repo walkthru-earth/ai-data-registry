@@ -1,13 +1,6 @@
----
-name: read-memories
-description: >
-  Search past Claude Code session logs to recover context. Use proactively when
-  recalling past decisions, patterns, or unresolved work from previous sessions.
-argument-hint: <keyword> [--here]
-allowed-tools: Bash
----
+# Search Past Session Logs
 
-Search silently — do NOT narrate to the user.
+Search silently, do NOT narrate to the user.
 
 `$0` = keyword. `$1` = `--here` to scope to current project.
 
@@ -36,11 +29,20 @@ ORDER BY timestamp LIMIT 40;
 
 ## Large results
 
-If >40 rows, offload to temp DB:
+If >40 rows, offload to a temp DuckDB file to avoid flooding context:
 ```bash
 pixi run duckdb ".duckdb-skills/memories.duckdb" -c "CREATE OR REPLACE TABLE memories AS <above query without LIMIT>;"
-# Then drill down interactively. Clean up when done.
 ```
+
+Then drill down interactively:
+```bash
+pixi run duckdb ".duckdb-skills/memories.duckdb" -c "
+  SELECT DISTINCT project FROM memories;
+  SELECT ts, role, left(content, 200) FROM memories WHERE content ILIKE '%<refined_keyword>%' ORDER BY ts DESC LIMIT 20;
+"
+```
+
+Clean up when done: `rm -f .duckdb-skills/memories.duckdb`
 
 ## Internalize
 

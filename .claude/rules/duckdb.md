@@ -50,14 +50,10 @@ Then validate: `pixi run gpio check all output.parquet`
 - For public buckets: `SET s3_access_key_id = ''; SET s3_secret_access_key = '';`
 
 ## Session State
-- Use the **duckdb-state** skill to initialize and manage `state.sql` (extensions, credentials, macros)
+- Use the **duckdb** skill ([state.md](../skills/duckdb/references/state.md) reference) to initialize and manage `state.sql` (extensions, credentials, macros)
 - State file location: `.duckdb-skills/state.sql` (project-local) or `~/.duckdb-skills/<project>/state.sql`
 - Core extensions pre-loaded in state: spatial, httpfs, fts
 
 ## Cross-references
-- **duckdb-query** skill → interactive SQL or natural language queries
-- **duckdb-read-file** skill → explore any data file (CSV, Parquet, Excel, spatial, etc.)
-- **duckdb-docs** skill → search DuckDB documentation when unsure about syntax
-- **duckdb-state** skill → initialize/manage session state, extensions, credentials
-- **spatial-analysis** skill → combined DuckDB spatial + GDAL workflows
+- **duckdb** skill → unified DuckDB hub with references for query execution, file reading, spatial analysis, ArcGIS macros, docs search, extension management, session state
 - **geoparquet** skill → validate and optimize GeoParquet output from DuckDB

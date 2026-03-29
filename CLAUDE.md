@@ -136,16 +136,9 @@ Skills are invoked automatically when the task matches, or explicitly. All use `
 | Skill | When to use | Tool |
 |-------|-------------|------|
 | **geoparquet** | Creating, validating, optimizing, partitioning GeoParquet; STAC metadata; spatial indexing (H3/S2/A5) | `pixi run gpio` |
-| **gdal** | Vector/raster format conversion, reprojection, pipeline, terrain analysis, VSI remote files | `pixi run gdal` |
-| **spatial-analysis** | Spatial SQL queries, geometry operations, CRS transforms, spatial joins, ArcGIS FeatureServer macros, DuckDB + GDAL combined | `pixi run duckdb` + `pixi run gdal` |
+| **gdal** | Vector/raster format conversion, reprojection, pipeline, terrain analysis, VSI remote files. Esri refs in `references/esri-*.md` | `pixi run gdal` |
+| **duckdb** | SQL queries, file exploration, spatial analysis (155+ ST_* functions), ArcGIS REST macros, DuckLake, session state, docs search, extension management. References: `query.md`, `read-file.md`, `attach-db.md`, `state.md`, `docs-search.md`, `install.md`, `read-memories.md`, `spatial.md`, `arcgis.md`, `ducklake.md` | `pixi run duckdb` |
 | **data-pipeline** | Building ETL pipelines as pixi tasks with `depends-on`, multi-tool chaining | all tools |
-| **duckdb-query** | SQL queries (Friendly SQL), natural language → SQL, ad-hoc or session mode | `pixi run duckdb` |
-| **duckdb-read-file** | Explore any file: CSV, Parquet, Excel, JSON, spatial, Avro, SQLite, Jupyter, remote (S3/GCS/Azure) | `pixi run duckdb` |
-| **duckdb-attach-db** | Attach a .duckdb file for persistent querying across sessions | `pixi run duckdb` |
-| **duckdb-docs** | Search DuckDB documentation via full-text search (cached locally) | `pixi run duckdb` |
-| **duckdb-install** | Install or update DuckDB extensions (spatial, httpfs, fts, community exts) | `pixi run duckdb` |
-| **duckdb-read-memories** | Recover context from past Claude Code sessions via DuckDB JSONL queries | `pixi run duckdb` |
-| **duckdb-state** | Initialize/manage shared `state.sql` (extensions, credentials, macros, locking). Also documents addon macro files like `arcgis.sql` | `pixi run duckdb` |
 | **env-check** | Validate environment health: pixi, DuckDB, GDAL, gpio versions, extension status, compatibility | `pixi run` |
 | **playwright-skill** | Browser automation, testing, screenshots, responsive design, form testing, link checking | `pixi run node` |
 
@@ -185,17 +178,17 @@ osx-arm64, linux-64, win-64 — all dependencies must be cross-platform compatib
 | `state.sql` | Core session state (spatial, httpfs, fts extensions) | Auto via `-init` |
 | `arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, query, read, stats, extent, fields, domains, subtypes, relationships, type mapping, auth) | `pixi run duckdb -init ".duckdb-skills/arcgis.sql"` |
 
-The **spatial-analysis** skill documents all ArcGIS macros. The **gdal** skill has Esri driver references in `references/esri-*.md` (FeatureServer, FileGDB, Shapefile, raster services, Python API, gotchas).
+The **duckdb** skill documents all ArcGIS macros in [arcgis.md](/.claude/skills/duckdb/references/arcgis.md). The **gdal** skill has Esri driver references in `references/esri-*.md` (FeatureServer, FileGDB, Shapefile, raster services, Python API, gotchas).
 
 ## Skill Routing for Esri/ArcGIS Data
 
 | Task | Skill/Agent | Why |
 |------|------------|-----|
-| Query ArcGIS FeatureServer via SQL | **spatial-analysis** (arcgis.sql macros) | DuckDB reads JSON/GeoJSON natively, macros handle pagination, domains, auth |
+| Query ArcGIS FeatureServer via SQL | **duckdb** ([arcgis.md](/.claude/skills/duckdb/references/arcgis.md)) | DuckDB reads JSON/GeoJSON natively, macros handle pagination, domains, auth |
 | Download FeatureServer via CLI | **gdal** (`esri-featureserver.md` reference) | GDAL ESRIJSON driver with `gdal vector convert` |
 | Read/write .gdb (File Geodatabase) | **gdal** (`esri-filegdb.md` reference) | OpenFileGDB driver, full CRUD |
 | Deep .gdb inspection (domains, relationships, ERD) | **gdal** (`esri-python-api.md` reference) | Python GDAL API for what CLI can't reach |
-| Convert Shapefile to GeoParquet | **gdal** or **duckdb-read-file** | Either tool works, GDAL for complex CRS |
+| Convert Shapefile to GeoParquet | **gdal** or **duckdb** ([read-file.md](/.claude/skills/duckdb/references/read-file.md)) | Either tool works, GDAL for complex CRS |
 | ArcGIS MapServer/ImageServer raster | **gdal** (`esri-raster-services.md` reference) | WMS/TMS/AGS minidriver XML configs |
 | Esri CRS, date, encoding issues | **gdal** (`esri-gotchas.md` reference) | Version history, known issues, workarounds |
 | Build ArcGIS ingest pipeline | **pipeline-orchestrator** agent | Routes to DuckDB macros or GDAL as needed |
@@ -207,7 +200,7 @@ The **spatial-analysis** skill documents all ArcGIS macros. The **gdal** skill h
 - GDAL version must match libgdal-arrow-parquet version
 - GDAL: `vector convert` is format-only; use `vector reproject -d EPSG:xxxx` for CRS changes
 - gpio: install via `pixi add --pypi geoparquet-io --pre` (PyPI beta, not on conda-forge)
-- DuckDB spatial extension: `INSTALL spatial; LOAD spatial;` (or use **duckdb-state** skill)
+- DuckDB spatial extension: `INSTALL spatial; LOAD spatial;` (or use **duckdb** skill, [state.md](/.claude/skills/duckdb/references/state.md) reference)
 - Always validate GeoParquet: `pixi run gpio check all <file>`
 - Use `pixi run pnpm` not `npm` — npm is denied in settings.json
 - Python 3.12 is the runtime — stable and widely supported

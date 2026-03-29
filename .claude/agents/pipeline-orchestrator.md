@@ -69,8 +69,7 @@ depends-on = ["boundaries-convert", "boundaries-filter", "boundaries-optimize", 
 - Add `description` field to each task
 
 ### Cross-references
-- **duckdb-query** skill for SQL patterns and COPY syntax
+- **duckdb** skill for SQL patterns, COPY syntax, ArcGIS macros, and ST_* spatial functions
 - **geoparquet** skill for gpio CLI details
 - **data-quality** agent for validation checks
-- **spatial-analysis** skill for ArcGIS macros and ST_* spatial functions
 - **gdal** skill for Esri format references (FileGDB, Shapefile, FeatureServer)

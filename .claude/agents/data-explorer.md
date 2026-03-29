@@ -45,5 +45,4 @@ For ArcGIS REST endpoints, load macros first: `pixi run duckdb -init ".duckdb-sk
 ### Cross-references
 - **data-quality** agent for deep validation
 - **geoparquet** skill for GeoParquet optimization
-- **duckdb-query** skill for follow-up SQL queries
-- **spatial-analysis** skill for ArcGIS macros reference and ST_* functions
+- **duckdb** skill for follow-up SQL queries, ArcGIS macros, and ST_* functions

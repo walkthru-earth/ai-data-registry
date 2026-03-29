@@ -155,4 +155,4 @@ Detailed references for all Esri-related drivers and workflows live in `referenc
 
 ## Cross-references
 - **geoparquet** skill — gpio adds Hilbert sorting, bbox covering, validation that GDAL doesn't
-- **spatial-analysis** skill — combined DuckDB spatial + GDAL workflows
+- **duckdb** skill — DuckDB spatial + GDAL workflows ([spatial.md](../duckdb/references/spatial.md), [arcgis.md](../duckdb/references/arcgis.md))

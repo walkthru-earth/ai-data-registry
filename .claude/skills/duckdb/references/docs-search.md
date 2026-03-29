@@ -1,12 +1,4 @@
----
-name: duckdb-docs
-description: >
-  Search DuckDB and DuckLake documentation via full-text search. Use when encountering
-  DuckDB errors, looking up function syntax, or when other skills hit unknown DuckDB behavior.
-  Also use proactively when unsure about DuckDB features.
-argument-hint: <question or keyword>
-allowed-tools: Bash
----
+# DuckDB Documentation Search
 
 Query: `$@`
 
@@ -19,11 +11,15 @@ Query: `$@`
 
 Schema: `chunk_id` (PK), `page_title`, `section`, `breadcrumb`, `url`, `version`, `text`
 
-Default: search DuckDB `stable`. Use `current` for nightly, `blog` for background, DuckLake index for DuckLake questions.
+**Version filtering strategy:**
+- `stable` (default) -- released features and syntax
+- `current` -- nightly/unreleased features, use when user asks about cutting-edge or pre-release behavior
+- `blog` -- background, motivation, design decisions, use when user asks "why does DuckDB do X?"
+- DuckLake index with `stable` or `preview` -- for DuckLake-specific questions
 
 ## Extract search terms
 
-Natural language → extract key technical terms (drop stop words). Technical terms → use as-is.
+Natural language -> extract key technical terms (drop stop words). Technical terms -> use as-is.
 
 ## Ensure cache (~/.duckdb/docs/)
 
@@ -31,7 +27,7 @@ Natural language → extract key technical terms (drop stop words). Technical te
 pixi run python -c "import pathlib; pathlib.Path.home().joinpath('.duckdb','docs').mkdir(parents=True, exist_ok=True)"
 ```
 
-Check freshness (≤2 days). If stale/missing:
+Check freshness (<=2 days). If stale/missing:
 ```bash
 pixi run duckdb -c "
 LOAD httpfs; LOAD fts;
@@ -54,7 +50,7 @@ ORDER BY score DESC LIMIT 8;
 "
 ```
 
-No results → broaden query, drop least specific term. Still nothing → suggest docs website.
+No results -> broaden query, drop least specific term. Still nothing -> suggest docs website.
 
 ## Present
 

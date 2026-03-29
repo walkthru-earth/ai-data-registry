@@ -1,13 +1,6 @@
----
-name: duckdb-state
-description: >
-  Initialize and manage shared DuckDB session state (state.sql). Use when setting
-  up extensions, credentials, or macros that all DuckDB skills share. Other skills
-  delegate here for session initialization.
-allowed-tools: Bash
----
+# Session State Management
 
-Single source of truth for DuckDB session initialization. All `duckdb-*` skills use this state.
+Single source of truth for DuckDB session initialization. All DuckDB workflows use this state.
 
 ## State location
 
@@ -20,7 +13,7 @@ STATE_DIR=".duckdb-skills"
 pixi run python -c "import pathlib; pathlib.Path('$STATE_DIR').mkdir(exist_ok=True)"
 
 cat > "$STATE_DIR/state.sql" << 'SQL'
--- DuckDB session state — managed by duckdb-state skill
+-- DuckDB session state, managed by duckdb skill
 INSTALL spatial;  LOAD spatial;
 INSTALL httpfs;   LOAD httpfs;
 INSTALL fts;      LOAD fts;
@@ -31,11 +24,21 @@ CREATE OR REPLACE MACRO read_any(path) AS TABLE
     CASE
       WHEN path LIKE '%.parquet' OR path LIKE '%.geoparquet'
         THEN format('read_parquet(''{}'')', path)
-      WHEN path LIKE '%.csv' OR path LIKE '%.tsv'
+      WHEN path LIKE '%.csv' OR path LIKE '%.tsv' OR path LIKE '%.txt'
         THEN format('read_csv(''{}'')', path)
       WHEN path LIKE '%.json' OR path LIKE '%.geojson' OR path LIKE '%.ndjson'
+           OR path LIKE '%.jsonl' OR path LIKE '%.geojsonl' OR path LIKE '%.har'
         THEN format('read_json_auto(''{}'')', path)
-      ELSE format('read_parquet(''{}'')', path)
+      WHEN path LIKE '%.avro'
+        THEN format('read_avro(''{}'')', path)
+      WHEN path LIKE '%.xlsx' OR path LIKE '%.xls'
+        THEN format('read_xlsx(''{}'')', path)
+      WHEN path LIKE '%.shp' OR path LIKE '%.gpkg' OR path LIKE '%.fgb'
+           OR path LIKE '%.kml' OR path LIKE '%.gml'
+        THEN format('st_read(''{}'')', path)
+      WHEN path LIKE '%.db' OR path LIKE '%.sqlite' OR path LIKE '%.sqlite3'
+        THEN format('sqlite_scan(''{}'')', path)
+      ELSE format('read_blob(''{}'')', path)
     END
   );
 SQL
@@ -87,10 +90,4 @@ rm -f "$STATE_DIR/state.sql"
 |------|---------|-------------|
 | `.duckdb-skills/arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, fields, domains, stats, extent, read) | `.read .duckdb-skills/arcgis.sql` or `-init .duckdb-skills/arcgis.sql` |
 
-These are not auto-loaded by state.sql (to keep init fast). Load on demand when working with ArcGIS data. See **spatial-analysis** skill for full usage reference.
-
-## Cross-references
-- **duckdb-query** — sources state.sql before running queries
-- **duckdb-read-file** — the `read_any` macro is initialized here
-- **duckdb-install** — may call duckdb-state to add extensions
-- **spatial-analysis** — ArcGIS macros, ST_* spatial functions, GDAL CLI workflows
+These are not auto-loaded by state.sql (to keep init fast). Load on demand when working with ArcGIS data. See [arcgis.md](arcgis.md) for full usage reference.

@@ -62,5 +62,5 @@ print('=' * 48)
 ```
 
 If gpio fails: install with `pixi add --pypi geoparquet-io --pre`
-If extensions fail: run **duckdb-install** skill
-If state.sql invalid: re-initialize via **duckdb-state** skill
+If extensions fail: run **duckdb** skill ([install.md](../duckdb/references/install.md) reference)
+If state.sql invalid: re-initialize via **duckdb** skill ([state.md](../duckdb/references/state.md) reference)

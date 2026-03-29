@@ -24,4 +24,4 @@ Use `pixi run duckdb` to run queries. For natural language input, convert to Duc
 
 Show the results in a readable table format.
 
-If the query fails, use the **duckdb-docs** skill to look up the correct syntax.
+If the query fails, use the **duckdb** skill ([docs-search.md](../skills/duckdb/references/docs-search.md) reference) to look up the correct syntax.

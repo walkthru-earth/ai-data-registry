@@ -69,5 +69,5 @@ Severity levels: **critical** (broken data), **warning** (suspect), **info** (ob
 ```
 
 ### Cross-references
-- **duckdb-query** skill for complex SQL patterns
+- **duckdb** skill for complex SQL patterns
 - **geoparquet** skill for GeoParquet format details and optimization
