@@ -133,6 +133,26 @@ pixi run gdal raster pipeline \
 - `--config KEY=VALUE`, `-f FORMAT`, `--co KEY=VALUE`, `--lco KEY=VALUE`
 - `--overwrite`, `--append`, `--quiet`
 
+## Esri Formats and Services
+
+Detailed references for all Esri-related drivers and workflows live in `references/`. Read the relevant file when working with Esri data.
+
+| Reference | When to read |
+|-----------|-------------|
+| [esri-featureserver.md](references/esri-featureserver.md) | Downloading from ArcGIS FeatureServer/REST endpoints, ESRIJSON driver, pagination, authentication |
+| [esri-filegdb.md](references/esri-filegdb.md) | Reading/writing .gdb (File Geodatabase), OpenFileGDB driver, field domains, subtypes, relationships, special SQL |
+| [esri-shapefile.md](references/esri-shapefile.md) | Shapefile limitations, encoding, long field names (3.13+), migration to GeoParquet |
+| [esri-raster-services.md](references/esri-raster-services.md) | MapServer tiles/WMS, ImageServer raster download, ESRIC compact cache, ArcGIS .tif.vat.dbf RAT |
+| [esri-gotchas.md](references/esri-gotchas.md) | CRS handling (Esri WKT vs OGC), date/time fields, 64-bit integers, SDC/CDF, coordinate snapping, version history, open GitHub issues |
+| [esri-python-api.md](references/esri-python-api.md) | Python GDAL/OGR bindings for deep .gdb inspection: domains, relationships, subtypes, spatial index state, JSON exports (raw, flow graph, ERD schema) |
+
+**Quick rules:**
+- Always use `f=json` (never `f=pjson`) for FeatureServer URLs
+- Always prefix FeatureServer URLs with `ESRIJSON:` to disambiguate from GeoJSON
+- Always use OpenFileGDB over FileGDB SDK driver (only exception: CDF decompression)
+- FileGDB write path goes through OpenFileGDB since GDAL 3.11
+- Add `orderByFields=OBJECTID+ASC` for reliable FeatureServer pagination
+
 ## Cross-references
 - **geoparquet** skill — gpio adds Hilbert sorting, bbox covering, validation that GDAL doesn't
 - **spatial-analysis** skill — combined DuckDB spatial + GDAL workflows
