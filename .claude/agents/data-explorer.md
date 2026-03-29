@@ -33,7 +33,17 @@ Profile datasets using the project's tool chain. All tools via pixi.
 - CRS and geometry types (spatial data), file size, format details
 - Any data quality issues (mixed types, nulls, invalid geometries)
 
+### ArcGIS FeatureServer (via DuckDB macros)
+
+For ArcGIS REST endpoints, load macros first: `pixi run duckdb -init ".duckdb-skills/arcgis.sql"`
+
+- `SELECT * FROM arcgis_meta('https://.../FeatureServer/0?f=json')` -- layer summary
+- `SELECT * FROM arcgis_fields('https://.../FeatureServer/0?f=json')` -- schema with DuckDB types
+- `SELECT * FROM arcgis_domains('https://.../FeatureServer/0?f=json')` -- coded value domains
+- `SELECT * FROM arcgis_read('https://.../query?where=1%3D1&outFields=%2A&outSR=4326&returnGeometry=true&f=geojson')` -- features
+
 ### Cross-references
 - **data-quality** agent for deep validation
 - **geoparquet** skill for GeoParquet optimization
 - **duckdb-query** skill for follow-up SQL queries
+- **spatial-analysis** skill for ArcGIS macros reference and ST_* functions

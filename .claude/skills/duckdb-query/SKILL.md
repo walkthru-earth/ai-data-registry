@@ -112,3 +112,6 @@ SQL
 - **duckdb-state** — initialize session state (extensions, credentials, macros)
 - **duckdb-docs** — search DuckDB documentation for syntax/functions
 - **duckdb-read-file** — auto-detect and explore unknown file formats
+- **spatial-analysis** — DuckDB spatial + GDAL workflows, ArcGIS macros (`.duckdb-skills/arcgis.sql`)
+- **duckdb-install** — install missing extensions on error
+- **duckdb-attach-db** — attach persistent .duckdb databases

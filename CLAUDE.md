@@ -137,7 +137,7 @@ Skills are invoked automatically when the task matches, or explicitly. All use `
 |-------|-------------|------|
 | **geoparquet** | Creating, validating, optimizing, partitioning GeoParquet; STAC metadata; spatial indexing (H3/S2/A5) | `pixi run gpio` |
 | **gdal** | Vector/raster format conversion, reprojection, pipeline, terrain analysis, VSI remote files | `pixi run gdal` |
-| **spatial-analysis** | Spatial SQL queries, geometry operations, CRS transforms, spatial joins, DuckDB + GDAL combined | `pixi run duckdb` + `pixi run gdal` |
+| **spatial-analysis** | Spatial SQL queries, geometry operations, CRS transforms, spatial joins, ArcGIS FeatureServer macros, DuckDB + GDAL combined | `pixi run duckdb` + `pixi run gdal` |
 | **data-pipeline** | Building ETL pipelines as pixi tasks with `depends-on`, multi-tool chaining | all tools |
 | **duckdb-query** | SQL queries (Friendly SQL), natural language → SQL, ad-hoc or session mode | `pixi run duckdb` |
 | **duckdb-read-file** | Explore any file: CSV, Parquet, Excel, JSON, spatial, Avro, SQLite, Jupyter, remote (S3/GCS/Azure) | `pixi run duckdb` |
@@ -145,7 +145,7 @@ Skills are invoked automatically when the task matches, or explicitly. All use `
 | **duckdb-docs** | Search DuckDB documentation via full-text search (cached locally) | `pixi run duckdb` |
 | **duckdb-install** | Install or update DuckDB extensions (spatial, httpfs, fts, community exts) | `pixi run duckdb` |
 | **duckdb-read-memories** | Recover context from past Claude Code sessions via DuckDB JSONL queries | `pixi run duckdb` |
-| **duckdb-state** | Initialize/manage shared `state.sql` (extensions, credentials, macros, locking) | `pixi run duckdb` |
+| **duckdb-state** | Initialize/manage shared `state.sql` (extensions, credentials, macros, locking). Also documents addon macro files like `arcgis.sql` | `pixi run duckdb` |
 | **env-check** | Validate environment health: pixi, DuckDB, GDAL, gpio versions, extension status, compatibility | `pixi run` |
 | **playwright-skill** | Browser automation, testing, screenshots, responsive design, form testing, link checking | `pixi run node` |
 
@@ -177,6 +177,29 @@ Agents are spawned as subprocesses for complex tasks. They run autonomously and 
 osx-arm64, linux-64, win-64 — all dependencies must be cross-platform compatible.
 
 ---
+
+## DuckDB Macro Files (`.duckdb-skills/`)
+
+| File | Purpose | Load |
+|------|---------|------|
+| `state.sql` | Core session state (spatial, httpfs, fts extensions) | Auto via `-init` |
+| `arcgis.sql` | ArcGIS FeatureServer macros (13 macros: services, meta, query, fields, domains, subtypes, relationships, type mapping, auth) | `pixi run duckdb -init ".duckdb-skills/arcgis.sql"` |
+
+The **spatial-analysis** skill documents all ArcGIS macros. The **gdal** skill has Esri driver references in `references/esri-*.md` (FeatureServer, FileGDB, Shapefile, raster services, Python API, gotchas).
+
+## Skill Routing for Esri/ArcGIS Data
+
+| Task | Skill/Agent | Why |
+|------|------------|-----|
+| Query ArcGIS FeatureServer via SQL | **spatial-analysis** (arcgis.sql macros) | DuckDB reads JSON/GeoJSON natively, macros handle pagination, domains, auth |
+| Download FeatureServer via CLI | **gdal** (`esri-featureserver.md` reference) | GDAL ESRIJSON driver with `gdal vector convert` |
+| Read/write .gdb (File Geodatabase) | **gdal** (`esri-filegdb.md` reference) | OpenFileGDB driver, full CRUD |
+| Deep .gdb inspection (domains, relationships, ERD) | **gdal** (`esri-python-api.md` reference) | Python GDAL API for what CLI can't reach |
+| Convert Shapefile to GeoParquet | **gdal** or **duckdb-read-file** | Either tool works, GDAL for complex CRS |
+| ArcGIS MapServer/ImageServer raster | **gdal** (`esri-raster-services.md` reference) | WMS/TMS/AGS minidriver XML configs |
+| Esri CRS, date, encoding issues | **gdal** (`esri-gotchas.md` reference) | Version history, known issues, workarounds |
+| Build ArcGIS ingest pipeline | **pipeline-orchestrator** agent | Routes to DuckDB macros or GDAL as needed |
+| Profile ArcGIS dataset | **data-explorer** agent | Uses arcgis macros for FeatureServer profiling |
 
 ## Watch Out For
 - Run **env-check** skill after setup or when things break — it validates everything

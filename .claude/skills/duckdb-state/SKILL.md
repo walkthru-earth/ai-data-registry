@@ -81,7 +81,16 @@ rm -f "$STATE_DIR/state.sql"
 # Re-run initialization above
 ```
 
+## Addon macro files
+
+| File | Purpose | Load command |
+|------|---------|-------------|
+| `.duckdb-skills/arcgis.sql` | ArcGIS FeatureServer macros (13 table/scalar macros) | `.read .duckdb-skills/arcgis.sql` or `-init .duckdb-skills/arcgis.sql` |
+
+These are not auto-loaded by state.sql (to keep init fast). Load on demand when working with ArcGIS data. See **spatial-analysis** skill for full usage reference.
+
 ## Cross-references
 - **duckdb-query** — sources state.sql before running queries
 - **duckdb-read-file** — the `read_any` macro is initialized here
 - **duckdb-install** — may call duckdb-state to add extensions
+- **spatial-analysis** — ArcGIS macros, ST_* spatial functions, GDAL CLI workflows

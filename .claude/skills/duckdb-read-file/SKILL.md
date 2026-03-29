@@ -91,3 +91,4 @@ Suggest **duckdb-query** for follow-up queries or **duckdb-attach-db** for large
 - **duckdb-state** — initialize session state (extensions, credentials)
 - **duckdb-query** — follow-up SQL queries on the data
 - **duckdb-docs** — search documentation for errors or unknown functions
+- **spatial-analysis** — for ArcGIS FeatureServer URLs, use arcgis macros instead (`.duckdb-skills/arcgis.sql`)
