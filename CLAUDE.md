@@ -183,7 +183,7 @@ osx-arm64, linux-64, win-64 — all dependencies must be cross-platform compatib
 | File | Purpose | Load |
 |------|---------|------|
 | `state.sql` | Core session state (spatial, httpfs, fts extensions) | Auto via `-init` |
-| `arcgis.sql` | ArcGIS FeatureServer macros (13 macros: services, meta, query, fields, domains, subtypes, relationships, type mapping, auth) | `pixi run duckdb -init ".duckdb-skills/arcgis.sql"` |
+| `arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, query, read, stats, extent, fields, domains, subtypes, relationships, type mapping, auth) | `pixi run duckdb -init ".duckdb-skills/arcgis.sql"` |
 
 The **spatial-analysis** skill documents all ArcGIS macros. The **gdal** skill has Esri driver references in `references/esri-*.md` (FeatureServer, FileGDB, Shapefile, raster services, Python API, gotchas).
 

@@ -85,7 +85,7 @@ rm -f "$STATE_DIR/state.sql"
 
 | File | Purpose | Load command |
 |------|---------|-------------|
-| `.duckdb-skills/arcgis.sql` | ArcGIS FeatureServer macros (13 table/scalar macros) | `.read .duckdb-skills/arcgis.sql` or `-init .duckdb-skills/arcgis.sql` |
+| `.duckdb-skills/arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, fields, domains, stats, extent, read) | `.read .duckdb-skills/arcgis.sql` or `-init .duckdb-skills/arcgis.sql` |
 
 These are not auto-loaded by state.sql (to keep init fast). Load on demand when working with ArcGIS data. See **spatial-analysis** skill for full usage reference.
 
