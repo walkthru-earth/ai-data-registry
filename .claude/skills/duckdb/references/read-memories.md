@@ -31,18 +31,18 @@ ORDER BY timestamp LIMIT 40;
 
 If >40 rows, offload to a temp DuckDB file to avoid flooding context:
 ```bash
-pixi run duckdb ".duckdb-skills/memories.duckdb" -c "CREATE OR REPLACE TABLE memories AS <above query without LIMIT>;"
+pixi run duckdb ".claude/skills/duckdb/references/memories.duckdb" -c "CREATE OR REPLACE TABLE memories AS <above query without LIMIT>;"
 ```
 
 Then drill down interactively:
 ```bash
-pixi run duckdb ".duckdb-skills/memories.duckdb" -c "
+pixi run duckdb ".claude/skills/duckdb/references/memories.duckdb" -c "
   SELECT DISTINCT project FROM memories;
   SELECT ts, role, left(content, 200) FROM memories WHERE content ILIKE '%<refined_keyword>%' ORDER BY ts DESC LIMIT 20;
 "
 ```
 
-Clean up when done: `rm -f .duckdb-skills/memories.duckdb`
+Clean up when done: `rm -f .claude/skills/duckdb/references/memories.duckdb`
 
 ## Internalize
 

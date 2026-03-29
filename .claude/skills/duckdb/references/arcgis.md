@@ -3,10 +3,10 @@
 Swiss-knife macros for ArcGIS FeatureServer, MapServer, and REST services. Uses VARIANT (typed binary) for metadata access and `json_each()` + VARIANT cast for clean array iteration. Load once per session:
 
 ```bash
-pixi run duckdb -init ".duckdb-skills/arcgis.sql"
+pixi run duckdb -init ".claude/skills/duckdb/references/arcgis.sql"
 ```
 
-Or inside a running session: `.read .duckdb-skills/arcgis.sql`
+Or inside a running session: `.read .claude/skills/duckdb/references/arcgis.sql`
 
 ## Macro Quick Reference
 
@@ -176,4 +176,4 @@ CREATE SECRET arcgis_oauth (TYPE HTTP, BEARER_TOKEN (
 Not supported (interactive flows): IWA, PKI, SAML, OAuth authorization_code.
 Workaround: generate token via browser/tool, then use any method above.
 
-Full reference: `.duckdb-skills/arcgis.sql`
+Full reference: `.claude/skills/duckdb/references/arcgis.sql`

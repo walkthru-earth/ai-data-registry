@@ -51,7 +51,7 @@ Then validate: `pixi run gpio check all output.parquet`
 
 ## Session State
 - Use the **duckdb** skill ([state.md](../skills/duckdb/references/state.md) reference) to initialize and manage `state.sql` (extensions, credentials, macros)
-- State file location: `.duckdb-skills/state.sql` (project-local) or `~/.duckdb-skills/<project>/state.sql`
+- State file location: `.claude/skills/duckdb/references/state.sql`
 - Core extensions pre-loaded in state: spatial, httpfs, fts
 
 ## Cross-references

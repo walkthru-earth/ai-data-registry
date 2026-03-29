@@ -29,7 +29,7 @@ pixi run duckdb "$RESOLVED_PATH" -csv -c "DESCRIBE <table>; SELECT count() FROM 
 
 Use the state resolution snippet from the main SKILL.md to find `STATE_DIR`.
 
-If neither location exists, ask user: project-local (`.duckdb-skills/`) or home (`~/.duckdb-skills/<project-id>/`).
+If state directory does not exist, initialize it via [state.md](state.md).
 
 ## Step 5 -- Append ATTACH
 

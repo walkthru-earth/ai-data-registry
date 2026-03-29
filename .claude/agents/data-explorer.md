@@ -35,7 +35,7 @@ Profile datasets using the project's tool chain. All tools via pixi.
 
 ### ArcGIS FeatureServer (via DuckDB macros)
 
-For ArcGIS REST endpoints, load macros first: `pixi run duckdb -init ".duckdb-skills/arcgis.sql"`
+For ArcGIS REST endpoints, load macros first: `pixi run duckdb -init ".claude/skills/duckdb/references/arcgis.sql"`
 
 - `SELECT * FROM arcgis_meta('https://.../FeatureServer/0?f=json')` -- layer summary
 - `SELECT * FROM arcgis_fields('https://.../FeatureServer/0?f=json')` -- schema with DuckDB types

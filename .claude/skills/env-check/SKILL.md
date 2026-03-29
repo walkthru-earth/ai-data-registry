@@ -48,7 +48,7 @@ for name, cmd in checks:
 
 # state.sql check
 import pathlib
-sf = pathlib.Path('.duckdb-skills/state.sql')
+sf = pathlib.Path('.claude/skills/duckdb/references/state.sql')
 if sf.exists():
     ok, _ = run(f'pixi run duckdb -init {sf} -c \"SELECT 1;\"')
     print(f'  {\"OK\" if ok else \"FAIL\":4s}  state.sql valid')

@@ -171,12 +171,12 @@ osx-arm64, linux-64, win-64 — all dependencies must be cross-platform compatib
 
 ---
 
-## DuckDB Macro Files (`.duckdb-skills/`)
+## DuckDB Runtime Files (`.claude/skills/duckdb/references/`)
 
 | File | Purpose | Load |
 |------|---------|------|
-| `state.sql` | Core session state (spatial, httpfs, fts extensions) | Auto via `-init` |
-| `arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, query, read, stats, extent, fields, domains, subtypes, relationships, type mapping, auth) | `pixi run duckdb -init ".duckdb-skills/arcgis.sql"` |
+| `state.sql` | Core session state (spatial, httpfs, fts extensions, read_any macro) | Auto via `-init` |
+| `arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, query, read, stats, extent, fields, domains, subtypes, relationships, type mapping, auth) | `pixi run duckdb -init ".claude/skills/duckdb/references/arcgis.sql"` |
 
 The **duckdb** skill documents all ArcGIS macros in [arcgis.md](/.claude/skills/duckdb/references/arcgis.md). The **gdal** skill has Esri driver references in `references/esri-*.md` (FeatureServer, FileGDB, Shapefile, raster services, Python API, gotchas).
 

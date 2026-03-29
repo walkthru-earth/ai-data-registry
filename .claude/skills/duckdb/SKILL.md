@@ -30,10 +30,8 @@ Read the relevant reference when working on a specific task.
 
 ```bash
 STATE_DIR=""
-test -f .duckdb-skills/state.sql && STATE_DIR=".duckdb-skills"
-PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
-PROJECT_ID="$(echo "$PROJECT_ROOT" | tr '/' '-')"
-test -f "$HOME/.duckdb-skills/$PROJECT_ID/state.sql" && STATE_DIR="$HOME/.duckdb-skills/$PROJECT_ID"
+SKILL_DIR=".claude/skills/duckdb/references"
+test -f "$SKILL_DIR/state.sql" && STATE_DIR="$SKILL_DIR"
 ```
 
 **Mode**: Ad-hoc if `--file` flag present, SQL references file paths, or no state. Session if state exists and input references tables/is natural language.

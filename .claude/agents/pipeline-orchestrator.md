@@ -25,7 +25,7 @@ Plan and wire together multi-step data processing pipelines.
 | Reprojection | GDAL | `pixi run gdal vector reproject -d EPSG:xxxx` |
 | SQL transforms / aggregation | DuckDB | `pixi run duckdb` |
 | Spatial joins / analysis | DuckDB | `pixi run duckdb` (spatial ext) |
-| ArcGIS FeatureServer ingest | DuckDB | `pixi run duckdb -init ".duckdb-skills/arcgis.sql"` |
+| ArcGIS FeatureServer ingest | DuckDB | `pixi run duckdb -init ".claude/skills/duckdb/references/arcgis.sql"` |
 | GeoParquet optimization | gpio | `pixi run gpio sort hilbert` + `add bbox` |
 | GeoParquet validation | gpio | `pixi run gpio check all` |
 | GeoParquet partitioning | gpio | `pixi run gpio partition --strategy kdtree` |

@@ -4,12 +4,12 @@ Single source of truth for DuckDB session initialization. All DuckDB workflows u
 
 ## State location
 
-`.duckdb-skills/state.sql` at project root.
+`.claude/skills/duckdb/references/state.sql` in the skill directory.
 
 ## Initialization
 
 ```bash
-STATE_DIR=".duckdb-skills"
+STATE_DIR=".claude/skills/duckdb/references"
 pixi run python -c "import pathlib; pathlib.Path('$STATE_DIR').mkdir(exist_ok=True)"
 
 cat > "$STATE_DIR/state.sql" << 'SQL'
@@ -88,6 +88,6 @@ rm -f "$STATE_DIR/state.sql"
 
 | File | Purpose | Load command |
 |------|---------|-------------|
-| `.duckdb-skills/arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, fields, domains, stats, extent, read) | `.read .duckdb-skills/arcgis.sql` or `-init .duckdb-skills/arcgis.sql` |
+| `.claude/skills/duckdb/references/arcgis.sql` | ArcGIS REST macros, VARIANT-optimized (19 macros: catalog, layers, meta, fields, domains, stats, extent, read) | `.read .claude/skills/duckdb/references/arcgis.sql` or `-init .claude/skills/duckdb/references/arcgis.sql` |
 
 These are not auto-loaded by state.sql (to keep init fast). Load on demand when working with ArcGIS data. See [arcgis.md](arcgis.md) for full usage reference.
