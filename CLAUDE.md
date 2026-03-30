@@ -138,7 +138,7 @@ Skills are invoked automatically when the task matches, or explicitly. All use `
 |-------|-------------|------|
 | **geoparquet** | Creating, validating, optimizing, partitioning GeoParquet; STAC metadata; spatial indexing (H3/S2/A5) | `pixi run gpio` |
 | **gdal** | Vector/raster format conversion, reprojection, pipeline, terrain analysis, VSI remote files. Esri refs in `references/esri-*.md` | `pixi run gdal` |
-| **duckdb** | SQL queries, file exploration, spatial analysis (155+ ST_* functions), ArcGIS REST macros, DuckLake, session state, docs search, extension management. References: `query.md`, `read-file.md`, `attach-db.md`, `state.md`, `docs-search.md`, `install.md`, `read-memories.md`, `spatial.md`, `arcgis.md`, `ducklake.md` | `pixi run duckdb` |
+| **duckdb** | SQL queries, file exploration, spatial analysis (ST_*, s2_*, h3_*, a5_*), ArcGIS REST macros, DuckLake, session state, docs search, extension management. References: `query.md`, `read-file.md`, `attach-db.md`, `state.md`, `docs-search.md`, `install.md`, `read-memories.md`, `spatial.md`, `h3.md`, `a5.md`, `geography.md`, `arcgis.md`, `ducklake.md` | `pixi run duckdb` |
 | **data-pipeline** | Building ETL pipelines as pixi tasks with `depends-on`, multi-tool chaining | all tools |
 | **env-check** | Validate environment health: pixi, DuckDB, GDAL, gpio versions, extension status, compatibility | `pixi run` |
 | **playwright-skill** | Browser automation, testing, screenshots, responsive design, form testing, link checking | `pixi run node` |

@@ -1,75 +1,74 @@
 # Spatial Analysis with DuckDB
 
-All tools via pixi: `pixi run duckdb`, `pixi run gdal`.
+All tools via pixi: `pixi run duckdb`.
 
 ## Step 0 -- Discover available ST_* functions (MUST run first)
 
 Before writing any spatial query, run this to get the latest function signatures directly from the engine:
 
 ```sql
+INSTALL spatial;
 LOAD spatial;
-SELECT function_name, function_type,
-       STRING_AGG(DISTINCT return_type, ', ') AS return_types,
-       COUNT(*) AS overloads,
-       FIRST(description) AS description
+SELECT function_name, function_type, return_type,
+       parameters, parameter_types, description
 FROM duckdb_functions()
 WHERE function_name LIKE 'ST_%'
-GROUP BY function_name, function_type
-ORDER BY function_name;
+ORDER BY function_name, return_type;
 ```
 
-This is the **authoritative source**, it reflects the exact version installed, including any new functions added in updates. Use it to verify parameter names, return types, and overloads before composing queries. To look up a specific function, add `AND function_name = 'ST_Transform'`.
+This is the **authoritative source**. It reflects the exact version installed, including any new functions added in updates. The spatial extension provides built-in descriptions for most functions. To look up a specific function: `AND function_name = 'ST_Transform'`.
 
-## ST_* Quick Reference (113 functions)
+## Gotchas
 
-| Category | Functions |
-|----------|-----------|
-| **Constructors** | `ST_Point`, `ST_MakeLine`, `ST_MakePolygon`, `ST_MakeEnvelope`, `ST_Collect`, `ST_Multi` |
-| **Serialization** | `ST_GeomFromText`, `ST_GeomFromGeoJSON`, `ST_AsGeoJSON`, `ST_AsHEXWKB`, `ST_AsSVG` |
-| **Measurement** | `ST_Area`, `ST_Length`, `ST_Distance`, `ST_Perimeter` + `_Spheroid`/`_Sphere` variants |
-| **Predicates** | `ST_Contains`, `ST_Intersects`, `ST_Within`, `ST_Crosses`, `ST_Touches`, `ST_DWithin`, `ST_Overlaps`, `ST_Equals` |
-| **Operations** | `ST_Buffer`, `ST_Union`, `ST_Intersection`, `ST_Difference`, `ST_Simplify`, `ST_ConvexHull`, `ST_ConcaveHull`, `ST_BuildArea` |
-| **Coordinates** | `ST_X`, `ST_Y`, `ST_Z`, `ST_M`, `ST_XMin/Max`, `ST_YMin/Max`, `ST_ZMin/Max` |
-| **Transform** | `ST_Transform`, `ST_FlipCoordinates`, `ST_Force2D/3DZ/3DM/4D`, `ST_Rotate`, `ST_Scale`, `ST_Translate` |
-| **Line ops** | `ST_LineInterpolatePoint`, `ST_LineLocatePoint`, `ST_LineSubstring`, `ST_LineMerge`, `ST_ShortestLine` |
-| **Indexing** | `ST_Hilbert`, `ST_QuadKey`, `ST_TileEnvelope` |
-| **Coverage** | `ST_CoverageUnion`, `ST_CoverageSimplify`, `ST_CoverageInvalidEdges` + `_Agg` variants |
-| **I/O** | `ST_Read`, `ST_ReadOSM`, `ST_ReadSHP`, `ST_Read_Meta`, `ST_Drivers` |
-| **MVT** | `ST_AsMVT`, `ST_AsMVTGeom` |
-| **Aggregates** | `ST_Union_Agg`, `ST_Extent_Agg`, `ST_Intersection_Agg`, `ST_MemUnion_Agg`, `ST_Collect` |
-| **Validation** | `ST_IsValid`, `ST_IsSimple`, `ST_IsRing`, `ST_IsClosed`, `ST_IsEmpty`, `ST_MakeValid` |
+- **ST_Transform requires CRS strings**: `ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')`. Both source and target CRS must be specified.
+- **Distance on EPSG:4326 returns degrees**, not meters. Use a projected CRS (e.g., EPSG:3857) or `_Spheroid`/`_Sphere` variants for metric accuracy.
+- **ST_Read vs read_parquet**: Use `ST_Read` for spatial files (GeoJSON, GPKG, Shapefile). Use `read_parquet` for GeoParquet (it preserves geometry natively).
+- **ST_Hilbert** is for spatial sorting/indexing, not the Hilbert curve visualization.
+- **MVT functions** (`ST_AsMVT`, `ST_AsMVTGeom`) require projected coordinates.
 
-## DuckDB Spatial patterns
+## Function categories (113+ functions)
 
-- Load: `INSTALL spatial; LOAD spatial;`
-- Read: `SELECT * FROM ST_Read('file.parquet')`
-- CRS: `ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')`
-- Joins: ST_Contains, ST_Within, ST_Intersects
-- Aggregations: ST_Union_Agg, ST_Collect with GROUP BY
-- Indexing: H3/S2 for large-scale point data
+| Category | Key functions | Notes |
+|----------|--------------|-------|
+| **Constructors** | `ST_Point`, `ST_MakeLine`, `ST_MakePolygon`, `ST_MakeEnvelope`, `ST_Collect`, `ST_Multi` | Build geometries from coordinates |
+| **Serialization** | `ST_GeomFromText`, `ST_GeomFromGeoJSON`, `ST_AsGeoJSON`, `ST_AsHEXWKB`, `ST_AsSVG` | WKT/WKB/GeoJSON I/O |
+| **Measurement** | `ST_Area`, `ST_Length`, `ST_Distance`, `ST_Perimeter` | `_Spheroid`/`_Sphere` variants for geodesic accuracy |
+| **Predicates** | `ST_Contains`, `ST_Intersects`, `ST_Within`, `ST_Crosses`, `ST_Touches`, `ST_DWithin`, `ST_Overlaps`, `ST_Equals` | Spatial relationships |
+| **Operations** | `ST_Buffer`, `ST_Union`, `ST_Intersection`, `ST_Difference`, `ST_Simplify`, `ST_ConvexHull`, `ST_ConcaveHull`, `ST_BuildArea` | Geometry manipulation |
+| **Coordinates** | `ST_X`, `ST_Y`, `ST_Z`, `ST_M`, `ST_XMin/Max`, `ST_YMin/Max`, `ST_ZMin/Max` | Coordinate extraction |
+| **Transform** | `ST_Transform`, `ST_FlipCoordinates`, `ST_Force2D/3DZ/3DM/4D`, `ST_Rotate`, `ST_Scale`, `ST_Translate` | CRS and geometric transforms |
+| **Line ops** | `ST_LineInterpolatePoint`, `ST_LineLocatePoint`, `ST_LineSubstring`, `ST_LineMerge`, `ST_ShortestLine` | Linear referencing |
+| **Indexing** | `ST_Hilbert`, `ST_QuadKey`, `ST_TileEnvelope` | Spatial sorting and tiling |
+| **Coverage** | `ST_CoverageUnion`, `ST_CoverageSimplify`, `ST_CoverageInvalidEdges` + `_Agg` variants | Topological coverage ops |
+| **I/O** | `ST_Read`, `ST_ReadOSM`, `ST_ReadSHP`, `ST_Read_Meta`, `ST_Drivers` | File reading (GeoJSON, GPKG, SHP, OSM) |
+| **MVT** | `ST_AsMVT`, `ST_AsMVTGeom` | Mapbox vector tiles |
+| **Aggregates** | `ST_Union_Agg`, `ST_Extent_Agg`, `ST_Intersection_Agg`, `ST_MemUnion_Agg`, `ST_Collect` | Geometry aggregation |
+| **Validation** | `ST_IsValid`, `ST_IsSimple`, `ST_IsRing`, `ST_IsClosed`, `ST_IsEmpty`, `ST_MakeValid` | Geometry checks and repair |
 
-## GDAL CLI (unified v3.12+)
+## Common patterns
 
-- Info: `gdal info input.gpkg`
-- Convert: `gdal vector convert input.shp output.parquet`
-- Reproject: `gdal vector reproject input.gpkg output.gpkg -d EPSG:4326`
-- Pipeline: `gdal vector pipeline read in.gpkg ! reproject --dst-crs EPSG:4326 ! write out.parquet`
-- Terrain: `gdal raster hillshade dem.tif hillshade.tif`
+```sql
+-- Load and read
+LOAD spatial;
+SELECT * FROM ST_Read('file.gpkg');
 
-See the **gdal** skill for the complete CLI reference.
+-- CRS transform
+SELECT ST_Transform(geom, 'EPSG:4326', 'EPSG:3857') FROM my_table;
 
-## GeoParquet -- preferred interchange format
+-- Spatial join
+SELECT a.*, b.name FROM polygons a, points b
+WHERE ST_Contains(a.geom, b.geom);
 
-- Columnar, compressed, embedded CRS metadata
-- Read: DuckDB `read_parquet`/`ST_Read`, GDAL `gdal info`
-- Write from DuckDB: `COPY (...) TO 'out.parquet' (FORMAT PARQUET)`
-- Write from GDAL: `gdal vector convert in.gpkg out.parquet`
+-- Aggregation
+SELECT region, ST_Union_Agg(geom) AS merged FROM parcels GROUP BY region;
 
-See the **geoparquet** skill for optimization (Hilbert sorting, bbox covering, validation).
+-- GeoParquet output
+COPY (SELECT * FROM my_spatial_table) TO 'out.parquet' (FORMAT PARQUET);
+```
 
 ## Analysis patterns
 
 - Distance: use projected CRS (not EPSG:4326) for metric accuracy
-- Large-scale points: H3 or S2 indexing
-- Raster+vector: `gdal vector rasterize` / `gdal raster polygonize`
-- Zonal stats: `gdal raster zonal-stats <raster> <zones> <out>`
+- Large-scale points: H3, S2, or A5 indexing (see **h3**, **geography**, **a5** references)
+- For GDAL CLI operations (format conversion, reprojection, raster/terrain): see the **gdal** skill
+- For GeoParquet optimization (Hilbert sorting, bbox covering, validation): see the **geoparquet** skill
