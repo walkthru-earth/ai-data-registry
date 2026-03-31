@@ -1,0 +1,236 @@
+name: "PR Extract (Staging)"
+
+# Maintainer-triggered full extraction on PR data.
+# Uploads to s3://bucket/pr/{pr_number}/{schema}/ instead of production paths.
+# Triggered by:
+#   1. Maintainer comment "/run-extract" on a PR
+#   2. Manual workflow_dispatch with PR number and workspace
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+        description: "PR number to extract"
+      workspace:
+        required: true
+        type: string
+        description: "Workspace name (directory under workspaces/)"
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  parse-command:
+    name: Parse /run-extract command
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/run-extract'))
+    runs-on: ubuntu-latest
+    outputs:
+      pr_number: ${{ steps.parse.outputs.pr_number }}
+      workspaces: ${{ steps.parse.outputs.workspaces }}
+      ref: ${{ steps.parse.outputs.ref }}
+    steps:
+      - name: Check maintainer permissions
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission --jq '.permission')
+          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "maintain" && "$PERMISSION" != "write" ]]; then
+            echo "User ${{ github.event.comment.user.login }} does not have write access. Ignoring."
+            exit 1
+          fi
+
+      - name: Parse command
+        id: parse
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ inputs.pr_number }}"
+            WORKSPACES='["${{ inputs.workspace }}"]'
+          else
+            PR_NUMBER="${{ github.event.issue.number }}"
+            # Parse workspace names from comment: /run-extract [workspace1] [workspace2]
+            COMMENT="${{ github.event.comment.body }}"
+            WS_ARGS=$(echo "$COMMENT" | sed 's|/run-extract||' | xargs)
+            if [ -z "$WS_ARGS" ]; then
+              # Auto-detect changed workspaces in the PR
+              CHANGED=$(gh pr diff "$PR_NUMBER" --name-only -- workspaces/ 2>/dev/null || echo "")
+              WS_ARGS=$(echo "$CHANGED" | grep -oP '^workspaces/\K[^/]+' | sort -u | xargs)
+            fi
+            WORKSPACES=$(echo "$WS_ARGS" | tr ' ' '\n' | jq -R . | jq -sc .)
+          fi
+
+          # Get PR head ref for checkout
+          REF=$(gh pr view "$PR_NUMBER" --json headRefName --jq '.headRefName')
+
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "workspaces=$WORKSPACES" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "PR #$PR_NUMBER, workspaces: $WORKSPACES, ref: $REF"
+
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions \
+            -f content='rocket' 2>/dev/null || true
+
+  extract:
+    name: "PR Extract: ${{ matrix.workspace }}"
+    needs: parse-command
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJson(needs.parse-command.outputs.workspaces) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.parse-command.outputs.ref }}
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: prefix-dev/setup-pixi@v0.9
+        with:
+          cache: true
+
+      - name: Run full pipeline
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/output
+          WORKSPACE_SECRET_API_KEY: ${{ secrets[format('WS_{0}_API_KEY', matrix.workspace)] }}
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          pixi run -w ${{ matrix.workspace }} pipeline
+
+      - name: Upload to S3 staging prefix
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
+          PR_NUMBER: ${{ needs.parse-command.outputs.pr_number }}
+        run: |
+          OUTPUT_DIR="${{ runner.temp }}/output"
+          STAGING_PREFIX="s3://${S3_BUCKET}/pr/${PR_NUMBER}/${{ matrix.workspace }}"
+
+          if ls "$OUTPUT_DIR"/*.parquet 1>/dev/null 2>&1; then
+            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+              cp "$OUTPUT_DIR/*.parquet" "${STAGING_PREFIX}/"
+            FILE_COUNT=$(ls "$OUTPUT_DIR"/*.parquet | wc -l)
+            echo "Uploaded $FILE_COUNT Parquet file(s) to ${STAGING_PREFIX}/"
+          else
+            echo "No Parquet files found in output directory."
+            exit 1
+          fi
+
+      - name: Validate staged output
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/output
+        run: |
+          uv run .github/scripts/validate_output.py \
+            workspaces/${{ matrix.workspace }}/pixi.toml \
+            "$OUTPUT_DIR"
+
+  report:
+    name: Post PR report
+    needs: [parse-command, extract]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.parse-command.outputs.ref }}
+
+      - name: Build report
+        id: report
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          PR_NUMBER: ${{ needs.parse-command.outputs.pr_number }}
+          WORKSPACES: ${{ needs.parse-command.outputs.workspaces }}
+          EXTRACT_RESULT: ${{ needs.extract.result }}
+        run: |
+          STATUS_ICON="✅"
+          if [ "$EXTRACT_RESULT" != "success" ]; then
+            STATUS_ICON="❌"
+          fi
+
+          # Build workspace list and query examples
+          WS_LIST=""
+          QUERY_EXAMPLES=""
+          for WS in $(echo "$WORKSPACES" | jq -r '.[]'); do
+            STAGING_PREFIX="s3://${S3_BUCKET}/pr/${PR_NUMBER}/${WS}"
+            WS_LIST="${WS_LIST}\n- \`${WS}\` → \`${STAGING_PREFIX}/\`"
+
+            # Read schema.table from workspace pixi.toml if available
+            SCHEMA=$(python3 -c "
+          import tomllib
+          with open('workspaces/${WS}/pixi.toml', 'rb') as f:
+              m = tomllib.load(f)
+          r = m.get('tool', {}).get('registry', {})
+          print(r.get('schema', '${WS}'))
+          " 2>/dev/null || echo "$WS")
+
+            TABLE=$(python3 -c "
+          import tomllib
+          with open('workspaces/${WS}/pixi.toml', 'rb') as f:
+              m = tomllib.load(f)
+          r = m.get('tool', {}).get('registry', {})
+          print(r.get('table', 'data'))
+          " 2>/dev/null || echo "data")
+
+            QUERY_EXAMPLES="${QUERY_EXAMPLES}
+          -- Query staged ${WS} data
+          SELECT * FROM read_parquet('${STAGING_PREFIX}/*.parquet') LIMIT 10;"
+          done
+
+          # Write comment body
+          cat > /tmp/pr-comment.md << 'COMMENT_EOF'
+          ## ${STATUS_ICON} PR Extract Report (PR #${PR_NUMBER})
+
+          **Workspaces extracted:**
+          ${WS_LIST}
+
+          <details>
+          <summary>Query staged data with DuckDB</summary>
+
+          ```sql
+          -- Set S3 credentials first
+          SET s3_endpoint = '<your-endpoint>';
+          SET s3_access_key_id = '<key>';
+          SET s3_secret_access_key = '<secret>';
+          ${QUERY_EXAMPLES}
+          ```
+
+          </details>
+
+          > Staging data will be automatically cleaned up when this PR is closed or merged.
+          > To re-run extraction: comment \`/run-extract\` or \`/run-extract <workspace>\`
+          COMMENT_EOF
+
+          # Use envsubst for variable expansion
+          export STATUS_ICON WS_LIST QUERY_EXAMPLES PR_NUMBER
+          envsubst < /tmp/pr-comment.md > /tmp/pr-comment-final.md
+
+          echo "comment_file=/tmp/pr-comment-final.md" >> "$GITHUB_OUTPUT"
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ needs.parse-command.outputs.pr_number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body-file /tmp/pr-comment-final.md 2>/dev/null || \
+            echo "Failed to post PR comment."

@@ -1,0 +1,113 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'workspaces/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  detect-changed:
+    name: Detect changed workspaces
+    runs-on: ubuntu-latest
+    outputs:
+      workspaces: ${{ steps.detect.outputs.workspaces }}
+      count: ${{ steps.detect.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed workspaces
+        id: detect
+        run: |
+          # Get list of changed files in workspaces/
+          CHANGED=$(git diff --name-only origin/main...HEAD -- workspaces/ 2>/dev/null || \
+                    git diff --name-only HEAD~1 -- workspaces/ 2>/dev/null || \
+                    echo "")
+
+          # Extract unique workspace names
+          WORKSPACES=$(echo "$CHANGED" | grep -oP '^workspaces/\K[^/]+' | sort -u | jq -R . | jq -sc .)
+
+          COUNT=$(echo "$WORKSPACES" | jq length)
+          echo "workspaces=$WORKSPACES" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT changed workspace(s): $WORKSPACES"
+
+  validate:
+    name: "Validate: ${{ matrix.workspace }}"
+    needs: detect-changed
+    if: needs.detect-changed.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJson(needs.detect-changed.outputs.workspaces) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: prefix-dev/setup-pixi@v0.9
+        with:
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      # Layer 1: Static analysis (no secrets needed)
+      - name: "Layer 1: Static analysis"
+        run: |
+          uv run .github/scripts/validate_manifest.py \
+            workspaces/${{ matrix.workspace }}/pixi.toml
+
+      # Layer 2: Collision detection (no secrets needed)
+      - name: "Layer 2: Collision detection"
+        run: |
+          uv run .github/scripts/check_collisions.py \
+            --workspace ${{ matrix.workspace }}
+
+      # Layer 3: Live catalog check (skips gracefully without S3 secrets)
+      - name: "Layer 3: Catalog compatibility"
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
+        run: |
+          uv run .github/scripts/check_catalog.py \
+            --workspace ${{ matrix.workspace }}
+
+      # Layer 4: Dry run extraction + output validation
+      - name: "Layer 4: Dry run"
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/output
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          pixi run -w ${{ matrix.workspace }} dry-run
+
+      - name: "Layer 4: Validate output"
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/output
+        run: |
+          uv run .github/scripts/validate_output.py \
+            workspaces/${{ matrix.workspace }}/pixi.toml \
+            "$OUTPUT_DIR"
+
+  summary:
+    name: Validation summary
+    needs: [detect-changed, validate]
+    if: always() && needs.detect-changed.outputs.count != '0'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report result
+        run: |
+          if [ "${{ needs.validate.result }}" = "success" ]; then
+            echo "All workspace validations passed."
+          else
+            echo "One or more workspace validations failed. Check the job logs above."
+            exit 1
+          fi

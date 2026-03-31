@@ -16,6 +16,10 @@ CLAUDE.local.md
 # Project temp directory (cross-platform scratch space)
 .tmp/
 
+# Python bytecode
+__pycache__/
+*.pyc
+
 # Data and Secrets
 data/
 .env
