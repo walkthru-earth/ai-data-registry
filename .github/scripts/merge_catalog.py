@@ -172,12 +172,12 @@ def merge_workspace(workspace: str, catalog_dir: str) -> bool:
 
     # Ensure the table exists in global catalog
     try:
-        con.execute(f"SELECT 1 FROM global_cat.{schema}.{table} LIMIT 0")
+        con.execute(f'SELECT 1 FROM global_cat."{schema}"."{table}" LIMIT 0')
     except duckdb.Error:
         # Table doesn't exist, create it from workspace schema
         print(f"  Creating table {schema}.{table} in global catalog...")
         try:
-            con.execute(f"CREATE SCHEMA IF NOT EXISTS global_cat.{schema}")
+            con.execute(f'CREATE SCHEMA IF NOT EXISTS global_cat."{schema}"')
             # Get CREATE TABLE from workspace
             cols = con.execute(f"""
                 SELECT column_name, data_type
@@ -191,7 +191,7 @@ def merge_workspace(workspace: str, catalog_dir: str) -> bool:
                 return False
 
             col_defs = ", ".join(f'"{name}" {dtype}' for name, dtype in cols)
-            con.execute(f'CREATE TABLE global_cat.{schema}.{table} ({col_defs})')
+            con.execute(f'CREATE TABLE global_cat."{schema}"."{table}" ({col_defs})')
         except duckdb.Error as e:
             print(f"  ERROR: Failed to create table in global catalog: {e}")
             con.close()

@@ -68,6 +68,13 @@ pixi add -w my-workspace <other-deps>
 ```
 Or use /new-workspace <name> <language> for guided setup.
 
+### Workspace Registration (local-only)
+`pixi workspace register` stores mappings in `~/.pixi/workspaces.toml` (machine-local, not committed to git). This means:
+- Each developer must run `pixi workspace register` after cloning
+- CI workflows must register workspaces explicitly before using `pixi run -w`
+- The root `pixi.toml` does NOT contain workspace member definitions
+- Do NOT add a `members` key to `[workspace]` in root `pixi.toml`. It is not supported in pixi v0.66.0.
+
 ### Workspace Isolation Principles
 
 **What lives in root `pixi.toml` (shared):**
@@ -244,3 +251,5 @@ The **duckdb** skill documents all ArcGIS macros in [arcgis.md](/.claude/skills/
 - Use `/new-workspace` to scaffold workspaces with full contract compliance
 - Workspace code writes to `$OUTPUT_DIR/`, never to S3. The workflow handles uploads via s5cmd
 - Runner backend + flavor must be from the supported list (see `workspace-contract` rule)
+- `pixi workspace register` is machine-local (`~/.pixi/workspaces.toml`). CI must register workspaces explicitly before `pixi run -w`
+- Do NOT add `members` to `[workspace]` in root `pixi.toml`. It is not a valid key in pixi v0.66.0

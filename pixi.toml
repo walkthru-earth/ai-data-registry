@@ -1,7 +1,6 @@
 [workspace]
 authors = ["Youssef Harby <me@youssefharby.com>"]
 channels = ["conda-forge"]
-members = ["workspaces/*"]
 name = "ai-data-registry"
 platforms = ["osx-arm64", "linux-64", "win-64"]
 version = "0.1.0"
