@@ -47,11 +47,14 @@ win-only-tool = ">=1.0"
 - Use `args` for parameterized tasks: `args = [{ arg = "name", default = "World" }]`
 
 ## Workspace Commands
+
+**Important:** Workspace registrations are machine-local (stored in `~/.pixi/workspaces.toml`, not in `pixi.toml`). Do NOT add a `members` key to root `pixi.toml`. CI workflows register workspaces explicitly.
+
 ```bash
-pixi workspace register --name <name> --path <path>  # Register sub-workspace
-pixi workspace register list                          # List all registered
-pixi workspace register remove <name>                 # Unregister
-pixi workspace register prune                         # Clean stale entries
+pixi workspace register --name <name> --path workspaces/<name>  # Register sub-workspace
+pixi workspace register list                                     # List all registered
+pixi workspace register remove <name>                            # Unregister
+pixi workspace register prune                                    # Clean stale entries
 ```
 
 ## Running Tools

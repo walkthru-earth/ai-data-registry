@@ -33,6 +33,12 @@ jobs:
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
+      - name: Register workspace
+        run: |
+          pixi workspace register \
+            --name ${{ inputs.workspace }} \
+            --path workspaces/${{ inputs.workspace }}
+
       - name: Pull workspace catalog from S3
         env:
           S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}

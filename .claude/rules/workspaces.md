@@ -135,9 +135,15 @@ args = [{ arg = "name", default = "World" }]
 ```
 
 ## Workspace Registration
+
+**Important:** `pixi workspace register` stores mappings in `~/.pixi/workspaces.toml` (machine-local, not committed to git). This means:
+- Each developer must register workspaces locally after cloning
+- CI workflows must register workspaces explicitly before using `pixi run -w`
+- Do NOT add a `members` key to `[workspace]` in root `pixi.toml`. It is not a valid key in pixi v0.66.0.
+
 ```bash
-pixi workspace register --name <name> --path <name>   # Register
-pixi workspace register list                            # List all
-pixi workspace register remove <name>                   # Unregister
-pixi workspace register prune                           # Clean stale entries
+pixi workspace register --name <name> --path workspaces/<name>  # Register
+pixi workspace register list                                     # List all
+pixi workspace register remove <name>                            # Unregister
+pixi workspace register prune                                    # Clean stale entries
 ```

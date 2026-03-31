@@ -107,6 +107,12 @@ jobs:
         with:
           cache: true
 
+      - name: Register workspace
+        run: |
+          pixi workspace register \
+            --name ${{ matrix.workspace }} \
+            --path workspaces/${{ matrix.workspace }}
+
       - name: Run full pipeline
         env:
           OUTPUT_DIR: ${{ runner.temp }}/output

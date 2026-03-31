@@ -67,6 +67,8 @@ rm workspaces/my-pipeline/pixi.lock   # root lock covers all workspaces
 pixi add -w my-pipeline python
 ```
 
+**Note:** `pixi workspace register` stores the mapping in `~/.pixi/workspaces.toml` (machine-local, not committed to git). Each developer must run it after cloning. CI workflows register workspaces automatically before running tasks.
+
 See `workspaces/test-minimal/` for a working reference implementation.
 
 ## Project Structure
