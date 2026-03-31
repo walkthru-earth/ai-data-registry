@@ -7,13 +7,19 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        required: true
+        type: string
+        description: "PR number to clean up staging data for"
 
 permissions:
   contents: read
 
 jobs:
   cleanup:
-    name: "Cleanup PR #${{ github.event.pull_request.number }}"
+    name: "Cleanup PR #${{ github.event.pull_request.number || inputs.pr_number }}"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -29,7 +35,7 @@ jobs:
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: |
           STAGING_PREFIX="s3://${S3_BUCKET}/pr/${PR_NUMBER}/"
 
