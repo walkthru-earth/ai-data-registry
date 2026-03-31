@@ -58,16 +58,6 @@ def get_storage_config() -> dict:
     return load_config()["storage"]
 
 
-def get_supported_backends() -> dict[str, dict]:
-    """Return the [backends.*] sections as a dict of backend_name -> config."""
-    config = load_config()
-    return {
-        name: section
-        for name, section in config.items()
-        if name.startswith("backends.") or (isinstance(section, dict) and name != "storage")
-    }
-
-
 def get_backends() -> dict[str, dict]:
     """Return backends as {name: {workflow, flavors}}."""
     config = load_config()

@@ -52,24 +52,6 @@ def check_collisions(target_workspace: str | None = None) -> list[str]:
                 f"{', '.join(sorted(owners))}. Each schema.table must be owned by exactly one workspace."
             )
 
-    # Also check for S3 prefix (schema) overlaps
-    schema_owners: dict[str, list[str]] = {}
-    for ws in workspaces:
-        registry = ws.get("registry")
-        if not registry:
-            continue
-        schema = registry.get("schema", "")
-        if schema:
-            schema_owners.setdefault(schema, []).append(ws["name"])
-
-    for schema, owners in schema_owners.items():
-        if len(owners) > 1:
-            if target_workspace and target_workspace not in owners:
-                continue
-            # Multiple workspaces can share a schema if they have different tables
-            # This is a warning, not a hard block
-            pass
-
     return errors
 
 

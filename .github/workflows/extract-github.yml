@@ -46,6 +46,17 @@ jobs:
             "$CATALOG_PATH" 2>/dev/null || echo "No existing catalog found (first run)."
           echo "CATALOG_PATH=$CATALOG_PATH" >> "$GITHUB_ENV"
 
+      - name: Resolve schema name
+        id: schema
+        run: |
+          SCHEMA=$(python3 -c "
+          import tomllib
+          with open('workspaces/${{ inputs.workspace }}/pixi.toml', 'rb') as f:
+              m = tomllib.load(f)
+          print(m.get('tool', {}).get('registry', {}).get('schema', '${{ inputs.workspace }}'))
+          ")
+          echo "name=$SCHEMA" >> "$GITHUB_OUTPUT"
+
       - name: Run pipeline
         env:
           OUTPUT_DIR: ${{ runner.temp }}/output
@@ -66,7 +77,7 @@ jobs:
           if ls "$OUTPUT_DIR"/*.parquet 1>/dev/null 2>&1; then
             pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
               cp "$OUTPUT_DIR/*.parquet" \
-              "s3://${S3_BUCKET}/${{ inputs.workspace }}/"
+              "s3://${S3_BUCKET}/${{ steps.schema.outputs.name }}/"
             echo "Uploaded $(ls "$OUTPUT_DIR"/*.parquet | wc -l) Parquet file(s)."
           else
             echo "No Parquet files found in output directory."

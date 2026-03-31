@@ -133,13 +133,13 @@ def merge_workspace(workspace: str, catalog_dir: str) -> bool:
         from urllib.parse import urlparse
         parsed = urlparse(endpoint)
         s3_host = parsed.hostname or endpoint.replace("https://", "").replace("http://", "")
-        con.execute(f"SET s3_endpoint = '{s3_host}'")
+        con.execute("SET s3_endpoint = ?", [s3_host])
         if parsed.scheme == "https":
             con.execute("SET s3_use_ssl = true")
     if access_key:
-        con.execute(f"SET s3_access_key_id = '{access_key}'")
+        con.execute("SET s3_access_key_id = ?", [access_key])
     if secret_key:
-        con.execute(f"SET s3_secret_access_key = '{secret_key}'")
+        con.execute("SET s3_secret_access_key = ?", [secret_key])
 
     # Attach workspace catalog (read-only)
     try:
