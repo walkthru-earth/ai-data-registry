@@ -1,0 +1,138 @@
+name: "Extract (Hetzner Runner)"
+
+on:
+  workflow_call:
+    inputs:
+      workspace:
+        required: true
+        type: string
+      server_type:
+        required: false
+        type: string
+        default: "cax11"
+  workflow_dispatch:
+    inputs:
+      workspace:
+        required: true
+        type: string
+        description: "Workspace name (directory under workspaces/)"
+      server_type:
+        required: false
+        type: string
+        default: "cax11"
+        description: "Hetzner server type (cax11, cax21, cax31, cax41)"
+
+concurrency:
+  group: extract-${{ inputs.workspace }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  create-runner:
+    name: Create Hetzner runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.hcloud.outputs.label }}
+      server_id: ${{ steps.hcloud.outputs.server_id }}
+    steps:
+      - id: hcloud
+        uses: Cyclenerd/hcloud-github-runner@v1
+        with:
+          mode: create
+          github_token: ${{ secrets.RUNNER_PAT }}
+          hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          server_type: ${{ inputs.server_type }}
+          location: fsn1
+
+  extract:
+    name: "Extract: ${{ inputs.workspace }}"
+    needs: create-runner
+    runs-on: ${{ needs.create-runner.outputs.label }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.9
+        with:
+          cache: true
+          post-cleanup: true
+
+      - name: Pull workspace catalog from S3
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
+        run: |
+          CATALOG_PATH="${{ runner.temp }}/${{ inputs.workspace }}.ducklake"
+          pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+            cp "s3://${S3_BUCKET}/.catalogs/${{ inputs.workspace }}.ducklake" \
+            "$CATALOG_PATH" 2>/dev/null || echo "No existing catalog found (first run)."
+          echo "CATALOG_PATH=$CATALOG_PATH" >> "$GITHUB_ENV"
+
+      - name: Run pipeline
+        env:
+          OUTPUT_DIR: ${{ runner.temp }}/output
+          CATALOG_PATH: ${{ env.CATALOG_PATH }}
+          WORKSPACE_SECRET_API_KEY: ${{ secrets[format('WS_{0}_API_KEY', inputs.workspace)] }}
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+          pixi run -w ${{ inputs.workspace }} pipeline
+
+      - name: Upload output to S3
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
+        run: |
+          OUTPUT_DIR="${{ runner.temp }}/output"
+          if ls "$OUTPUT_DIR"/*.parquet 1>/dev/null 2>&1; then
+            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+              cp "$OUTPUT_DIR/*.parquet" \
+              "s3://${S3_BUCKET}/${{ inputs.workspace }}/"
+            echo "Uploaded $(ls "$OUTPUT_DIR"/*.parquet | wc -l) Parquet file(s)."
+          else
+            echo "No Parquet files found in output directory."
+            exit 1
+          fi
+
+      - name: Upload workspace catalog to S3
+        env:
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
+        run: |
+          CATALOG_PATH="${{ runner.temp }}/${{ inputs.workspace }}.ducklake"
+          if [ -f "$CATALOG_PATH" ]; then
+            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+              cp "$CATALOG_PATH" \
+              "s3://${S3_BUCKET}/.catalogs/${{ inputs.workspace }}.ducklake"
+            echo "Uploaded workspace catalog."
+          fi
+
+      - name: Trigger catalog merge
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run merge-catalog.yml \
+            --field workspace=${{ inputs.workspace }} \
+            2>/dev/null || echo "merge-catalog.yml not found or dispatch failed."
+
+  delete-runner:
+    name: Delete Hetzner runner
+    needs: [create-runner, extract]
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    steps:
+      - uses: Cyclenerd/hcloud-github-runner@v1
+        with:
+          mode: delete
+          github_token: ${{ secrets.RUNNER_PAT }}
+          hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+          name: ${{ needs.create-runner.outputs.label }}
+          server_id: ${{ needs.create-runner.outputs.server_id }}

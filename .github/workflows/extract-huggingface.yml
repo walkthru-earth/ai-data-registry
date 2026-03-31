@@ -1,0 +1,71 @@
+name: "Extract (HuggingFace Jobs)"
+
+on:
+  workflow_call:
+    inputs:
+      workspace:
+        required: true
+        type: string
+      flavor:
+        required: false
+        type: string
+        default: "a10g-large"
+      image:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      workspace:
+        required: true
+        type: string
+        description: "Workspace name (directory under workspaces/)"
+      flavor:
+        required: false
+        type: string
+        default: "a10g-large"
+        description: "HF Jobs hardware flavor"
+      image:
+        required: true
+        type: string
+        description: "Docker image URL (e.g., ghcr.io/org/image:latest)"
+
+concurrency:
+  group: extract-${{ inputs.workspace }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: "Submit HF Job: ${{ inputs.workspace }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Submit and monitor HF Job
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_JOB_NAMESPACE: ${{ github.repository_owner }}
+          HF_JOB_IMAGE: ${{ inputs.image }}
+          HF_JOB_FLAVOR: ${{ inputs.flavor }}
+          HF_JOB_WORKSPACE: ${{ inputs.workspace }}
+          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
+          WORKSPACE_SECRET_API_KEY: ${{ secrets[format('WS_{0}_API_KEY', inputs.workspace)] }}
+        run: |
+          uv run .github/scripts/submit_hf_job.py
+
+      - name: Trigger catalog merge
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run merge-catalog.yml \
+            --field workspace=${{ inputs.workspace }} \
+            2>/dev/null || echo "merge-catalog.yml not found or dispatch failed."

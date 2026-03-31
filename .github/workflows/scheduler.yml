@@ -1,0 +1,49 @@
+name: Scheduler
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'    # Check every 15 minutes
+  workflow_dispatch: {}        # Manual trigger for testing
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  schedule:
+    name: Check and dispatch due workspaces
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: prefix-dev/setup-pixi@v0.9
+        with:
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      - name: Download scheduler state
+        uses: actions/download-artifact@v4
+        with:
+          name: scheduler-state
+          path: ${{ runner.temp }}
+        continue-on-error: true  # First run won't have state
+
+      - name: Find and dispatch due workspaces
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          STATE_FILE="${{ runner.temp }}/scheduler-state.json"
+          uv run .github/scripts/find_due.py \
+            --state-file "$STATE_FILE"
+
+      - name: Upload scheduler state
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-state
+          path: ${{ runner.temp }}/scheduler-state.json
+          retention-days: 90
+          overwrite: true

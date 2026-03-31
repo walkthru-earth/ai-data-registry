@@ -1,0 +1,68 @@
+name: Build Docker Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workspaces/*/Dockerfile'
+      - 'workspaces/*/docker/**'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  detect-changed:
+    name: Detect changed images
+    runs-on: ubuntu-latest
+    outputs:
+      workspaces: ${{ steps.detect.outputs.workspaces }}
+      count: ${{ steps.detect.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Find workspaces with changed Dockerfiles
+        id: detect
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 -- 'workspaces/*/Dockerfile' 'workspaces/*/docker/' 2>/dev/null || echo "")
+          WORKSPACES=$(echo "$CHANGED" | grep -oP '^workspaces/\K[^/]+' | sort -u | jq -R . | jq -sc .)
+          COUNT=$(echo "$WORKSPACES" | jq length)
+          echo "workspaces=$WORKSPACES" >> "$GITHUB_OUTPUT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Found $COUNT workspace(s) with changed Docker images: $WORKSPACES"
+
+  build:
+    name: "Build: ${{ matrix.workspace }}"
+    needs: detect-changed
+    if: needs.detect-changed.outputs.count != '0'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJson(needs.detect-changed.outputs.workspaces) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: workspaces/${{ matrix.workspace }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.workspace }}:latest
+            ghcr.io/${{ github.repository_owner }}/${{ matrix.workspace }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
