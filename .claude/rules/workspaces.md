@@ -1,17 +1,28 @@
 # Multi-Workspace Rules
 
-This is a multi-workspace mono-repo. Each sub-workspace is a directory with its own `pixi.toml`, registered in the root workspace via `pixi workspace register`. All workspaces share a single `pixi.lock` at the root.
+This is a multi-workspace mono-repo. Each sub-workspace is an isolated pixi environment under `workspaces/` with its own `pixi.toml`, deps, and tasks. All workspaces share a single `pixi.lock` at the root.
+
+**Naming distinction:**
+- **Workspace** = the directory (`workspaces/weather/`) providing an isolated pixi environment
+- **Schema** = the data namespace in `[tool.registry].schema`, used as S3 prefix and DuckLake schema
+
+A working example lives at `workspaces/test-minimal/`.
 
 ## Architecture
 
 ```
 ai-data-registry/
-├── pixi.toml              # Root workspace — shared tools (GDAL, DuckDB, pnpm, Python)
+├── pixi.toml              # Root — shared tools (GDAL, DuckDB, pnpm, Python)
 ├── pixi.lock              # Single lock file for ALL workspaces
-├── workspace-a/
-│   └── pixi.toml          # Sub-workspace — own runtime, deps, tasks
-├── workspace-b/
-│   └── pixi.toml
+├── workspaces/
+│   ├── test-minimal/      # Example workspace (reference implementation)
+│   │   ├── pixi.toml      # [workspace] + [tool.registry] + deps + tasks
+│   │   ├── extract.py     # Extraction script (writes to $OUTPUT_DIR)
+│   │   └── validate_local.py
+│   ├── weather/
+│   │   └── pixi.toml
+│   └── sanctions/
+│       └── pixi.toml
 ```
 
 ## Creating a New Sub-Workspace
@@ -19,20 +30,25 @@ ai-data-registry/
 Use `/project:new-workspace <name> <language>` or manually:
 
 ```bash
-# 1. Create and initialize (from project root)
-mkdir <name>
-cd <name>
+# 1. Create directory under workspaces/
+mkdir -p workspaces/<name>
+
+# 2. Initialize (from project root)
+cd workspaces/<name>
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
-cd ..
+cd ../..
 
-# 2. Register in root workspace
-pixi workspace register --name <name> --path <name>
+# 3. Register in root workspace
+pixi workspace register --name <name> --path workspaces/<name>
 
-# 3. Add language runtime and dependencies (using -w flag from root)
+# 4. Add language runtime and dependencies (using -w flag from root)
 pixi add -w <name> python                    # or go, nodejs, rust, etc.
 pixi add -w <name> <workspace-specific-deps>
 
-# 4. Verify registration
+# 5. Delete the workspace-level pixi.lock (root lock covers all)
+rm workspaces/<name>/pixi.lock
+
+# 6. Verify registration
 pixi workspace register list
 ```
 

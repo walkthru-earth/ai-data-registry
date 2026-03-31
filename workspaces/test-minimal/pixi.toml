@@ -1,0 +1,40 @@
+[workspace]
+name = "test-minimal"
+channels = ["conda-forge"]
+platforms = ["osx-arm64", "linux-64", "win-64"]
+version = "0.1.0"
+
+[dependencies]
+python = ">=3.12,<4"
+
+[pypi-dependencies]
+duckdb = ">=1.5.1"
+
+[tasks]
+extract = "python extract.py"
+validate = { cmd = "python validate_local.py", depends-on = ["extract"] }
+pipeline = { depends-on = ["extract", "validate"] }
+dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
+
+[tool.registry]
+description = "Minimal test workspace for validating the registry infrastructure"
+schedule = "0 6 * * 1"
+timeout = 5
+tags = ["test", "validation"]
+schema = "test-minimal"
+table = "data"
+mode = "replace"
+
+[tool.registry.runner]
+backend = "github"
+flavor = "ubuntu-latest"
+
+[tool.registry.license]
+code = "Apache-2.0"
+data = "CC0-1.0"
+data_source = "Synthetic test data"
+
+[tool.registry.checks]
+min_rows = 10
+max_null_pct = 0
+unique_cols = ["id"]

@@ -6,15 +6,17 @@ Git-native, PR-driven data platform. Each workspace is an isolated data pipeline
 Full architecture: `research/architecture.md`
 
 ## Data Registry Architecture (summary)
-- Workspaces declare pipeline metadata in `[tool.registry]` section of their `pixi.toml`
+- **Workspace** = isolated pixi environment under `workspaces/` (own deps, tasks, scripts)
+- **Schema** = data namespace in `[tool.registry].schema` (S3 prefix + DuckLake schema). Often matches the workspace name but they are separate concepts
 - Each workspace writes Parquet to local `$OUTPUT_DIR/`, never directly to S3
-- Workflows upload to Hetzner S3 via `s5cmd` on the workspace's behalf
+- Workflows upload to S3 via `s5cmd` on the workspace's behalf
 - Runner backends: `github` (free, lightweight), `hetzner` (ephemeral ARM), `huggingface` (GPU/Docker)
 - Contributors pick backend + flavor from supported list. Maintainer manages all infra.
 - DuckLake: one SQLite catalog per workspace + one global. Zero-copy federation via `ducklake_add_data_files()`
-- Task contract: `pipeline` entry point chains `setup` -> `extract` -> `validate` via `depends-on`
+- Task contract: `pipeline` entry point chains `extract` -> `validate` via `depends-on`
 - PR validation: 4 layers (static analysis, collision detection, live catalog check, dry-run)
 - See `.claude/rules/workspace-contract.md` for the full MUST/MUST NOT contract
+- Working example: `workspaces/test-minimal/` (minimal reference implementation)
 
 ## Package Manager: Pixi
 - **Config**: Each workspace has its own `pixi.toml`
@@ -29,28 +31,35 @@ Full architecture: `research/architecture.md`
 
 ```
 ai-data-registry/
-├── pixi.toml              # Root — shared tools (GDAL, DuckDB, gpio, s5cmd, pnpm, Python)
+├── pixi.toml              # Root, shared tools (GDAL, DuckDB, gpio, s5cmd, pnpm, Python)
 ├── pixi.lock              # Single lock file for ALL workspaces
 ├── .claude/               # AI rules, skills, agents, commands (project-wide)
+├── .github/
+│   ├── registry.config.toml  # Backend definitions, storage secret names
+│   ├── scripts/               # CI scripts (run via uv, PEP 723 inline deps)
+│   └── workflows/             # GitHub Actions (validation, extraction, scheduling)
 ├── research/
 │   └── architecture.md    # Full platform architecture
 ├── workspaces/
+│   ├── test-minimal/      # Example workspace (reference implementation)
+│   │   ├── pixi.toml      # [workspace] + [tool.registry] + deps + tasks
+│   │   ├── extract.py     # Extraction script
+│   │   └── validate_local.py
 │   ├── weather/           # backend: hetzner
-│   │   └── pixi.toml      # [tool.registry] + deps + tasks
-│   ├── sanctions/         # backend: github (lightweight)
 │   │   └── pixi.toml
-│   └── weather-index/     # backend: huggingface (GPU)
+│   └── sanctions/         # backend: github (lightweight)
 │       └── pixi.toml
 ```
 
 ### Creating a Sub-Workspace
 ```bash
 # From project root:
-mkdir my-workspace
-cd my-workspace
+mkdir -p workspaces/my-workspace
+cd workspaces/my-workspace
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
-cd ..
-pixi workspace register --name my-workspace --path my-workspace
+cd ../..
+pixi workspace register --name my-workspace --path workspaces/my-workspace
+rm workspaces/my-workspace/pixi.lock  # root lock covers all
 
 # Add deps targeting the workspace (from root):
 # Or with Claude Code: /new-workspace my-workspace python
@@ -95,15 +104,19 @@ pixi add -w workspace-a --pypi <pkg>
 ---
 
 ## Conventions
-- **All tools run through pixi** — never run `duckdb`, `gdal`, `gpio`, `s5cmd`, `python`, `node`, `pnpm` directly
-- `pixi run pnpm` — NEVER npm or yarn (npm is denied in settings.json)
-- **GeoParquet is the standard interchange format** — validate with `pixi run gpio check all`
-- New unified `gdal` CLI (v3.11+) — NOT legacy `ogr2ogr`/`gdalinfo`/`ogrinfo`
+- **Two runtimes, clear separation:**
+  - **pixi** runs workspace pipelines and shared tools (`pixi run -w {name} pipeline`, `pixi run s5cmd`)
+  - **uv** runs CI helper scripts in `.github/scripts/` (`uv run .github/scripts/validate_manifest.py`). These use PEP 723 inline deps, not pixi.
+- **All shared tools run through pixi** -- never run `duckdb`, `gdal`, `gpio`, `s5cmd`, `python`, `node`, `pnpm` directly
+- `pixi run pnpm` -- NEVER npm or yarn (npm is denied in settings.json)
+- **GeoParquet is the standard interchange format** -- validate with `pixi run gpio check all`
+- New unified `gdal` CLI (v3.11+) -- NOT legacy `ogr2ogr`/`gdalinfo`/`ogrinfo`
 - Tasks in `[tasks]` of each workspace's `pixi.toml`, not Makefiles
 - Workspaces write to `$OUTPUT_DIR/`, never to S3 directly. Workflows upload via `pixi run s5cmd`
+- Do NOT hardcode `OUTPUT_DIR` in pixi task `env`. CI passes its own value.
 - Every workspace must have `[tool.registry]` metadata and required tasks (see `workspace-contract` rule)
 - Never commit `.pixi/` environments (only `.pixi/config.toml` is tracked)
-- `pixi.lock` is committed but treated as binary (see `.gitattributes`)
+- `pixi.lock` is committed at root only. Workspace-level `pixi.lock` files should be deleted after `pixi init`
 
 ### Adding Dependencies: conda vs PyPI
 

@@ -20,6 +20,12 @@ CLAUDE.local.md
 __pycache__/
 *.pyc
 
+# Workspace local output (CI uses $OUTPUT_DIR from runner.temp)
+**/output/
+
+# Workspace-level pixi.lock (root lock covers all workspaces)
+workspaces/*/pixi.lock
+
 # Data and Secrets
 data/
 .env
