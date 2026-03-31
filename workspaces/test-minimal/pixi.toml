@@ -17,7 +17,7 @@ pipeline = { depends-on = ["extract", "validate"] }
 dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
 
 [tool.registry]
-description = "Minimal test workspace for validating the registry infrastructure"
+description = "Minimal test workspace for validating the registry infrastructure (CI test)"
 schedule = "0 6 * * 1"
 timeout = 5
 tags = ["test", "validation"]
