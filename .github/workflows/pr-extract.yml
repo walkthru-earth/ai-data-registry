@@ -39,13 +39,18 @@ jobs:
       workspaces: ${{ steps.parse.outputs.workspaces }}
       ref: ${{ steps.parse.outputs.ref }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Check maintainer permissions
         if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission --jq '.permission')
-          if [[ "$PERMISSION" != "admin" && "$PERMISSION" != "maintain" && "$PERMISSION" != "write" ]]; then
+          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.event.comment.user.login }}/permission --jq '.permission' 2>/dev/null || echo "none")
+          ROLE=$(gh api orgs/${{ github.repository_owner }}/memberships/${{ github.event.comment.user.login }} --jq '.role' 2>/dev/null || echo "")
+          if [[ "$PERMISSION" == "admin" || "$PERMISSION" == "maintain" || "$PERMISSION" == "write" || "$ROLE" == "admin" || "$ROLE" == "member" ]]; then
+            echo "User ${{ github.event.comment.user.login }} has access (permission=$PERMISSION, org_role=$ROLE)."
+          else
             echo "User ${{ github.event.comment.user.login }} does not have write access. Ignoring."
             exit 1
           fi
