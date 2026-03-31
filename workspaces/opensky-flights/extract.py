@@ -92,7 +92,13 @@ def generate_dry_run(db):
 
 
 def write_geoparquet(db):
-    """Write to Hive-partitioned GeoParquet by date, Hilbert-sorted within each partition."""
+    """Write a single GeoParquet file per run, Hilbert-sorted.
+
+    DuckLake manages file catalog and compaction, so we write one flat file
+    per snapshot with snapshot_date as a regular column (not Hive-partitioned).
+    This avoids losing the partition column when DuckLake registers files
+    via ducklake_add_data_files().
+    """
     os.makedirs(OUT, exist_ok=True)
 
     count = db.execute("SELECT COUNT(*) FROM raw").fetchone()[0]
@@ -121,13 +127,11 @@ def write_geoparquet(db):
                 ST_Point(longitude, latitude) AS geometry
             FROM raw
             ORDER BY ST_Hilbert(ST_Point(longitude, latitude))
-        ) TO '{OUT}/states' (
+        ) TO '{OUT}/states.parquet' (
             FORMAT PARQUET,
             COMPRESSION ZSTD,
             COMPRESSION_LEVEL 15,
-            ROW_GROUP_SIZE 100000,
-            PARTITION_BY (snapshot_date),
-            OVERWRITE_OR_IGNORE
+            ROW_GROUP_SIZE 100000
         )
     """)
 
@@ -150,7 +154,7 @@ def main():
     db.close()
 
     label = "Dry run" if DRY_RUN else "Extract"
-    print(f"{label}: wrote {OUT}/states/ ({count} rows, partitioned by snapshot_date)")
+    print(f"{label}: wrote {OUT}/states.parquet ({count} rows)")
 
 
 if __name__ == "__main__":

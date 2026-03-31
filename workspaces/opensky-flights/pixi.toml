@@ -25,7 +25,6 @@ tags = ["aviation", "flights", "ads-b", "opensky", "real-time"]
 schema = "opensky-flights"
 table = "states"
 mode = "append"
-partition_by = "snapshot_date"
 
 [tool.registry.runner]
 backend = "github"
