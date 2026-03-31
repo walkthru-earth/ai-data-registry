@@ -33,11 +33,14 @@
       "Bash(pixi clean *)",
       "Bash(npm *)",
       "Read(**/.env)",
-      "Read(**/.env.*)",
+      "Read(**/.env.local)",
+      "Read(**/.env.production)",
+      "Read(**/.env.secret*)",
       "Bash(cat **/.env)",
       "Bash(cat **/.env.*)"
     ],
     "ask": [
+      "Read(**/.env.dev)",
       "Read(.claude/skills/duckdb/references/*.sql)",
       "Grep(.claude/skills/duckdb/references/*.sql)",
       "Bash(curl *)",

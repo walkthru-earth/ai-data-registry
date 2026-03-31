@@ -29,6 +29,7 @@ workspaces/*/pixi.lock
 # Data and Secrets
 data/
 .env
+.env.*
 *.env
 *.gitignore
 *.gitattributes
