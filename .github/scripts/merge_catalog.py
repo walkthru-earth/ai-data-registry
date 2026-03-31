@@ -112,27 +112,29 @@ def merge_workspace(workspace: str, catalog_dir: str) -> bool:
     con.execute("INSTALL ducklake; LOAD ducklake;")
     con.execute("INSTALL sqlite; LOAD sqlite;")
 
-    # Configure S3 access for DuckLake data paths
+    # Configure S3 access via CREATE SECRET so DuckLake internal operations
+    # (not just read_parquet) use the correct endpoint and credentials.
     endpoint = os.environ.get("S3_ENDPOINT_URL", "")
     access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
     secret_key = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
-
     region = os.environ.get("S3_REGION", "")
 
     if endpoint:
         from urllib.parse import urlparse
         parsed = urlparse(endpoint)
         s3_host = parsed.hostname or endpoint.replace("https://", "").replace("http://", "")
-        con.execute("SET s3_endpoint = ?", [s3_host])
-        con.execute("SET s3_url_style = 'path'")
-        if parsed.scheme == "https":
-            con.execute("SET s3_use_ssl = true")
-    if region:
-        con.execute("SET s3_region = ?", [region])
-    if access_key:
-        con.execute("SET s3_access_key_id = ?", [access_key])
-    if secret_key:
-        con.execute("SET s3_secret_access_key = ?", [secret_key])
+
+        con.execute(f"""
+            CREATE SECRET registry_s3 (
+                TYPE S3,
+                KEY_ID '{access_key}',
+                SECRET '{secret_key}',
+                ENDPOINT '{s3_host}',
+                URL_STYLE 'path',
+                USE_SSL {str(parsed.scheme == 'https').lower()},
+                REGION '{region or "auto"}'
+            )
+        """)
 
     # Download workspace catalog, or bootstrap from S3 Parquet files
     ws_bootstrap = False
@@ -154,9 +156,11 @@ def merge_workspace(workspace: str, catalog_dir: str) -> bool:
         # We INSERT INTO instead of ducklake_add_data_files because DuckLake's internal
         # S3 context may not inherit connection-level s3_endpoint/s3_url_style settings.
         try:
+            # Use bucket root as DATA_PATH so DuckLake writes files under
+            # {schema}/{table}/ without double-nesting the schema prefix.
             con.execute(f"""
                 ATTACH 'ducklake:sqlite:{ws_catalog_local}' AS ws (
-                    DATA_PATH '{ws_data_prefix}'
+                    DATA_PATH '{data_path}'
                 )
             """)
             con.execute(f'CREATE SCHEMA IF NOT EXISTS ws."{schema}"')
