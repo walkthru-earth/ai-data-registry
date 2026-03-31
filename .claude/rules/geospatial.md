@@ -1,13 +1,15 @@
 ---
 paths:
-  - "**/*.py"
-  - "**/*.sql"
-  - "**/*.parquet"
-  - "**/*.geojson"
-  - "**/*.gpkg"
-  - "**/*.tif"
-  - "**/*.shp"
-  - "**/*.fgb"
+  - "workspaces/**/*.py"
+  - "workspaces/**/*.sql"
+  - "workspaces/**/*.parquet"
+  - "workspaces/**/*.geojson"
+  - "workspaces/**/*.gpkg"
+  - "workspaces/**/*.tif"
+  - "workspaces/**/*.shp"
+  - "workspaces/**/*.fgb"
+  - "research/**/*.py"
+  - "research/**/*.sql"
 ---
 # Geospatial Data Rules
 

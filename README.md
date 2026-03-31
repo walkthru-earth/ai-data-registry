@@ -1,133 +1,100 @@
 # ai-data-registry
 
-Git-native, PR-driven data platform. Fork this repo, add data workspaces via PRs, and get automated validation, extraction, and catalog federation out of the box.
-
-Each workspace is an isolated pipeline with its own language, dependencies, and compute backend. DuckLake federates all workspace outputs into one queryable global catalog on S3-compatible storage.
+Git-native, PR-driven data platform. Fork, add a data pipeline as a workspace, open a PR. Automated validation, extraction, and catalog federation handle the rest.
 
 ## How It Works
 
-```
-Contributor opens PR          Maintainer reviews
-        |                           |
-  4-layer validation          /run-extract (staging test)
-  (static, collisions,             |
-   catalog, dry-run)          Merge to main
-        |                           |
-  Automated feedback          Scheduler dispatches
-  (no infra knowledge           to correct backend
-   needed)                          |
-                              Output uploaded to S3
-                                    |
-                              Catalog merge (DuckLake)
-                                    |
-                              Queryable via global catalog
+```mermaid
+flowchart LR
+    subgraph Contributor
+        PR[Open PR with workspace]
+    end
+
+    subgraph Validation
+        L1[Static analysis]
+        L2[Collision check]
+        L3[Catalog compat]
+        L4[Dry run]
+    end
+
+    subgraph Extraction
+        GH[GitHub runner]
+        HZ[Hetzner ARM]
+        HF[HuggingFace GPU]
+    end
+
+    subgraph Storage
+        S3[(S3 Parquet)]
+        CAT[(DuckLake catalog)]
+    end
+
+    PR --> L1 --> L2 --> L3 --> L4
+    L4 -->|merge| GH & HZ & HF
+    GH & HZ & HF --> S3
+    S3 --> CAT
 ```
 
-**Workspace** = isolated pixi environment under `workspaces/` (own deps, tasks, scripts)
-
-**Schema** = data namespace in `[tool.registry].schema` (S3 prefix + DuckLake schema)
+Each workspace is an isolated pipeline with its own language, deps, and compute backend. [DuckLake](https://ducklake.select/) federates all outputs into one queryable global catalog via zero-copy file registration.
 
 ## Quick Start
 
-### Prerequisites
-
-| Tool | Install | Purpose |
-|------|---------|---------|
-| **Pixi** | [pixi.sh](https://pixi.sh) (`brew install pixi` or `curl -fsSL https://pixi.sh/install.sh \| bash`) | Package manager, workspace environments |
-| **Claude Code** (recommended) | [claude.ai/code](https://claude.ai/code) (`brew install --cask claude-code`) | AI-assisted workspace scaffolding |
-
-### Setup
+**Prerequisites:** [Pixi](https://pixi.sh) (`brew install pixi` or `curl -fsSL https://pixi.sh/install.sh | bash`)
 
 ```bash
-# Clone and install
 git clone <your-fork-url>
 cd ai-data-registry
 pixi install
-
-# Verify
-pixi run duckdb --version
-pixi run gdal --version
 ```
 
-### Create Your First Workspace
+### Create a Workspace
 
-Use the slash command for guided setup:
-```
-/new-workspace my-pipeline python
+```bash
+/new-workspace my-pipeline python    # Claude Code slash command
 ```
 
 Or manually:
+
 ```bash
 mkdir -p workspaces/my-pipeline
 cd workspaces/my-pipeline
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
 cd ../..
 pixi workspace register --name my-pipeline --path workspaces/my-pipeline
-rm workspaces/my-pipeline/pixi.lock   # root lock covers all workspaces
+rm workspaces/my-pipeline/pixi.lock
 pixi add -w my-pipeline python
 ```
 
-**Note:** `pixi workspace register` stores the mapping in `~/.pixi/workspaces.toml` (machine-local, not committed to git). Each developer must run it after cloning. CI workflows register workspaces automatically before running tasks.
-
-See `workspaces/test-minimal/` for a working reference implementation.
-
-## Project Structure
-
-```
-ai-data-registry/
-├── pixi.toml                  # Root, shared tools (GDAL, DuckDB, gpio, s5cmd)
-├── pixi.lock                  # Single lock file for ALL workspaces
-├── .github/
-│   ├── registry.config.toml   # Backend definitions, storage secret names
-│   ├── scripts/               # CI scripts (run via uv, PEP 723 inline deps)
-│   └── workflows/             # Validation, extraction, scheduling, maintenance
-├── workspaces/
-│   └── test-minimal/          # Example workspace (reference implementation)
-│       ├── pixi.toml           # [workspace] + [tool.registry] + deps + tasks
-│       ├── extract.py          # Extraction script (writes to $OUTPUT_DIR)
-│       └── validate_local.py   # Local validation
-├── research/
-│   └── architecture.md        # Full platform architecture
-└── .claude/                   # AI rules, skills, agents, commands
-```
+Then add your `[tool.registry]` config, write your extract script, and open a PR. See `workspaces/test-minimal/` for a working example.
 
 ## Workspace Contract
 
-Every workspace must declare its pipeline metadata in `[tool.registry]` inside its `pixi.toml`:
+Every workspace `pixi.toml` needs:
 
 ```toml
-[workspace]
-name = "my-pipeline"
-channels = ["conda-forge"]
-platforms = ["osx-arm64", "linux-64", "win-64"]
-version = "0.1.0"
-
-[dependencies]
-python = ">=3.12,<4"
-
 [tasks]
-extract = "python extract.py"
+extract = "python extract.py"                                     # writes to $OUTPUT_DIR/
 validate = { cmd = "python validate_local.py", depends-on = ["extract"] }
-pipeline = { depends-on = ["extract", "validate"] }
-dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
+pipeline = { depends-on = ["extract", "validate"] }               # runner entry point
+dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } } # PR validation
 
 [tool.registry]
 description = "What this pipeline extracts"
-schedule = "0 6 * * *"          # cron expression
-timeout = 30                    # minutes
+schedule = "0 6 * * *"        # cron
+timeout = 30                  # minutes
 tags = ["topic"]
-schema = "my-pipeline"          # S3 prefix + DuckLake schema
-table = "data"                  # DuckLake table name
-mode = "append"                 # append | replace | upsert
+schema = "my-pipeline"        # S3 prefix + DuckLake schema (must be unique)
+table = "data"
+mode = "append"               # append | replace | upsert
 
 [tool.registry.runner]
-backend = "github"              # github | hetzner | huggingface
+backend = "github"            # github | hetzner | huggingface
 flavor = "ubuntu-latest"
 
 [tool.registry.license]
-code = "Apache-2.0"
-data = "CC-BY-4.0"
+code = "Apache-2.0"           # OSI-approved SPDX
+data = "CC-BY-4.0"            # recognized SPDX
 data_source = "Source Name"
+mixed = false
 
 [tool.registry.checks]
 min_rows = 100
@@ -135,173 +102,152 @@ max_null_pct = 5
 unique_cols = ["id"]
 ```
 
-**Key rules:**
-- `extract` writes Parquet files to `$OUTPUT_DIR/` (defaults to `output/` locally, CI sets a temp dir)
-- Do NOT hardcode `OUTPUT_DIR` in task `env` (breaks CI override)
-- `pipeline` is the entry point runners call: `pixi run -w my-pipeline pipeline`
-- `dry-run` is what PR validation calls (sample output only)
-- Never write to S3 directly. Workflows handle uploads via s5cmd.
+**Key rules:** Write Parquet to `$OUTPUT_DIR/`, never to S3 directly. Do not hardcode `OUTPUT_DIR` in task env. No credentials in code (use `$WORKSPACE_SECRET_*`).
 
 ## Compute Backends
 
-Workspaces pick a backend + flavor in `[tool.registry.runner]`. Maintainers manage all infrastructure.
-
 | Backend | Flavors | Use case |
 |---------|---------|----------|
-| **github** | `ubuntu-latest` | Lightweight: API calls, CSV/JSON downloads |
-| **hetzner** | `cax11`, `cax21`, `cax31`, `cax41` | Medium: spatial processing, large datasets (ephemeral ARM servers) |
-| **huggingface** | `cpu-basic`, `cpu-upgrade`, `t4-small`, `t4-medium`, `l4x1`, `a10g-small`, `a10g-large`, `a10g-largex2`, `a100-large` | GPU: ML inference, embeddings (Docker containers) |
+| `github` | `ubuntu-latest` | Lightweight: API calls, CSV/JSON downloads |
+| `hetzner` | `cax11` `cax21` `cax31` `cax41` | Medium: spatial processing, large datasets (ephemeral ARM) |
+| `huggingface` | `cpu-basic` `cpu-upgrade` `t4-small` `t4-medium` `l4x1` `a10g-small` `a10g-large` `a10g-largex2` `a100-large` | GPU: ML inference, embeddings (Docker) |
 
-## PR Validation (4 layers)
+Need something else? Open an issue. Infrastructure is maintainer-managed.
 
-When a PR touches `workspaces/**`, automated validation runs:
+## PR Validation
 
-| Layer | What it checks | Secrets needed |
-|-------|---------------|----------------|
-| **1. Static analysis** | `[tool.registry]` fields, runner backend+flavor, SPDX licenses, cron syntax, required tasks | None |
-| **2. Collision detection** | `schema.table` uniqueness across all workspaces | None |
-| **3. Catalog compatibility** | Table existence and schema compatibility in global DuckLake catalog | S3 (skips gracefully without) |
-| **4. Dry run** | Runs `pixi run -w {name} dry-run`, validates Parquet output (row count, nulls, uniqueness) | None |
+```mermaid
+flowchart TD
+    PR[PR touches workspaces/] --> L1
 
-Layers 1-2 work on fork PRs without any secrets. Contributors get clear error messages with fix instructions.
+    subgraph L1[Layer 1: Static]
+        A[Required fields, SPDX licenses, cron, backend/flavor, tasks]
+    end
 
-### PR Staging Extraction
+    L1 --> L2
 
-After validation passes, a maintainer can trigger a full extraction against the PR branch:
+    subgraph L2[Layer 2: Collisions]
+        B[schema.table unique across all workspaces]
+    end
+
+    L2 --> L3
+
+    subgraph L3[Layer 3: Catalog]
+        C[Table existence + schema compatibility in DuckLake]
+    end
+
+    L3 --> L4
+
+    subgraph L4[Layer 4: Dry Run]
+        D["pixi run -w {name} dry-run + output validation"]
+    end
+
+    L4 -->|pass| OK[ready to merge]
+    L4 -->|fail| BLOCK[blocked with details]
+```
+
+Layers 1-2 and 4 work on fork PRs without secrets. Layer 3 gracefully skips when S3 credentials are unavailable.
+
+After validation, a maintainer can trigger full extraction to a staging prefix:
 
 ```
 /run-extract              # auto-detects changed workspaces
 /run-extract my-pipeline  # specific workspace
 ```
 
-This uploads data to `s3://bucket/pr/{pr_number}/{schema}/` (staging prefix, never production). A PR comment is posted with DuckDB query examples to inspect the staged data. Staging data is auto-cleaned when the PR is closed or merged.
+Staging data is auto-cleaned when the PR closes.
 
-**Important:** `/run-extract` runs from `main`, not the PR branch. Workflow changes must be merged to `main` before they take effect.
+## Data Flow
 
-### Manual Workflow Triggers
+```mermaid
+flowchart TD
+    subgraph Workspace[Workspace Extraction]
+        EX["pixi run -w {name} pipeline"]
+        OUT[Parquet in $OUTPUT_DIR/]
+        EX --> OUT
+    end
 
-All workflows can be triggered manually via the GitHub CLI:
+    subgraph Upload[Workflow Upload]
+        S5[s5cmd to S3]
+        OUT --> S5
+    end
 
-```bash
-# Run full extraction for a workspace
-gh workflow run extract-github.yml --field workspace=my-pipeline
+    subgraph Catalog[DuckLake Federation]
+        WC[Workspace catalog]
+        GC[Global catalog]
+        S5 --> WC
+        WC -->|"ducklake_add_data_files()"| GC
+    end
 
-# Run PR staging extraction
-gh workflow run pr-extract.yml --field pr_number=1 --field workspace=my-pipeline
+    GC -->|query| Q["SELECT * FROM global.schema.table"]
+```
 
-# Clean up staging data for a PR
-gh workflow run pr-cleanup.yml --field pr_number=1
+Workspace code has READ-ONLY S3 access. The workflow handles uploads with write credentials.
 
-# Debug a failed run
-gh run list --workflow "PR Validation" --limit 5
-gh run view <run-id> --log-failed
+## Project Structure
+
+```
+ai-data-registry/
+├── pixi.toml                  # Shared tools (GDAL, DuckDB, gpio, s5cmd, pnpm)
+├── pixi.lock                  # Single lock for all workspaces
+├── CONTRIBUTING.md            # Contributor guide
+├── MAINTAINING.md             # Maintainer guide
+├── .github/
+│   ├── registry.config.toml   # Backend + storage config
+│   ├── scripts/               # CI scripts (uv + PEP 723)
+│   └── workflows/             # Validation, extraction, scheduling
+├── workspaces/
+│   └── test-minimal/          # Reference implementation
+├── research/
+│   └── architecture.md        # Full architecture doc
+├── docs/
+│   ├── secrets-setup.md       # Repository secrets reference
+│   └── tool-versions.md       # Shared tool versions + deps guide
+└── .claude/                   # AI rules, skills, agents, commands
 ```
 
 ## Fork Setup (Maintainer)
 
-### 1. Configure storage
-
-Edit `.github/registry.config.toml` with your backend definitions. The defaults work for most setups.
-
-### 2. Set repository secrets
-
-Go to **Settings > Secrets and variables > Actions** and add:
-
-**Required (all backends):**
-
-| Secret | Description | Example |
-|--------|-------------|---------|
-| `S3_ENDPOINT_URL` | S3-compatible endpoint | `https://fsn1.your-objectstorage.com` |
-| `S3_BUCKET` | Bucket name | `my-registry` |
-| `S3_REGION` | Region (optional) | `fsn1` |
-| `S3_WRITE_KEY_ID` | S3 access key (write) | |
-| `S3_WRITE_SECRET` | S3 secret key | |
-
-**Hetzner backend (if using):**
-
-| Secret | Description |
-|--------|-------------|
-| `HCLOUD_TOKEN` | Hetzner Cloud API token |
-| `RUNNER_PAT` | GitHub PAT with `repo` scope (for self-hosted runner registration) |
-
-**HuggingFace backend (if using):**
-
-| Secret | Description |
-|--------|-------------|
-| `HF_TOKEN` | HuggingFace API token |
-
-**Per-workspace (optional):**
-
-| Secret | Description |
-|--------|-------------|
-| `WS_{name}_API_KEY` | Workspace-specific API key (e.g., `WS_weather_API_KEY`) |
-
-Or use the CLI:
-```bash
-gh secret set S3_ENDPOINT_URL --body "https://fsn1.your-objectstorage.com"
-gh secret set S3_BUCKET --body "my-registry"
-gh secret set S3_WRITE_KEY_ID --body "<your-key>"
-gh secret set S3_WRITE_SECRET --body "<your-secret>"
-```
-
-### 3. Verify
-
-Push a commit and open a PR that adds a workspace under `workspaces/`. The PR validation workflow should trigger automatically.
-
-## CI Tooling
-
-Two runtimes with clear separation:
-
-- **pixi** runs workspace pipelines and shared tools (`pixi run -w {name} pipeline`, `pixi run s5cmd`)
-- **uv** runs CI helper scripts in `.github/scripts/` using PEP 723 inline deps (`uv run .github/scripts/validate_manifest.py`). No lock file, no extra environment.
-
-CI scripts in `.github/scripts/`:
-
-| Script | Purpose | Layer |
-|--------|---------|-------|
-| `validate_manifest.py` | Static analysis of workspace contract | PR Layer 1 |
-| `check_collisions.py` | Schema.table uniqueness | PR Layer 2 |
-| `check_catalog.py` | Live catalog compatibility | PR Layer 3 |
-| `validate_output.py` | Parquet quality checks | PR Layer 4 |
-| `find_due.py` | Scheduler: evaluate cron, dispatch workflows | Scheduling |
-| `merge_catalog.py` | DuckLake catalog federation | Post-extract |
-| `maintenance.py` | Weekly CHECKPOINT on workspace catalogs | Maintenance |
-| `submit_hf_job.py` | HuggingFace Jobs submission | HF backend |
-| `test_local_merge.py` | Local DuckLake merge test (no S3 needed) | Testing |
+1. **Configure storage** in `.github/registry.config.toml` (defaults work for most setups)
+2. **Set repository secrets** per [docs/secrets-setup.md](docs/secrets-setup.md)
+3. **Push and open a PR** with a workspace under `workspaces/` to verify
 
 ## Shared Tools
 
-| Tool | Command | Purpose |
-|------|---------|---------|
-| GDAL (>=3.12.3) | `pixi run gdal ...` | Unified vector/raster CLI (v3.11+) |
-| DuckDB (>=1.5.1) | `pixi run duckdb ...` | Analytical SQL engine |
-| gpio | `pixi run gpio ...` | GeoParquet optimization/validation |
-| s5cmd (>=2.3.0) | `pixi run s5cmd ...` | Parallel S3 uploads |
-| Python (>=3.12) | `pixi run python ...` | Default runtime |
-| pnpm | `pixi run pnpm ...` | Node package manager |
+All tools run through pixi. Never run directly.
 
-All tools run through `pixi run`. Never run them directly.
+| Tool | Command |
+|------|---------|
+| GDAL >=3.12 | `pixi run gdal ...` |
+| DuckDB >=1.5 | `pixi run duckdb ...` |
+| gpio | `pixi run gpio ...` |
+| s5cmd | `pixi run s5cmd ...` |
+| Python >=3.12 | `pixi run python ...` |
+| pnpm | `pixi run pnpm ...` |
 
-## Claude Code Ecosystem
+Full versions and dependency guide: [docs/tool-versions.md](docs/tool-versions.md)
 
-This repo includes a full AI-assisted development setup in `.claude/`:
+## Claude Code
 
-- **7 rules** (auto-loaded context for tool execution, pixi, workspaces, DuckDB, geospatial, Node.js, workspace contract)
-- **13 skills** (GDAL, DuckDB, GeoParquet, data pipelines, spatial analysis, Playwright, etc.)
-- **3 agents** (data-explorer, data-quality, pipeline-orchestrator)
-- **7 slash commands** (`/new-workspace`, `/env-info`, `/query`, `/add-dep`, `/run-in`, `/inspect-file`, `/convert`)
+This repo includes a full AI-assisted development setup in `.claude/`. Contributors can use [Claude Code](https://claude.ai/code) to scaffold workspaces, debug pipelines, and explore data:
 
-Contributors can use Claude Code to scaffold contract-compliant workspaces, debug pipelines, and explore data without needing to understand the infrastructure.
+| Command | What it does |
+|---------|-------------|
+| `/new-workspace <name> <lang>` | Scaffold workspace with full contract |
+| `/inspect-file <path>` | Inspect data file (schema, rows, spatial) |
+| `/query <SQL>` | Run DuckDB query |
+| `/add-dep <pkg> [-w ws]` | Add dependency |
+| `/convert <in> <out>` | Convert geospatial formats |
 
-## Architecture
+## Docs
 
-Full design documentation: [`research/architecture.md`](research/architecture.md)
-
-Key concepts:
-- **DuckLake** federates workspace catalogs (SQLite on S3) into one global catalog via `ducklake_add_data_files()` (zero-copy file registration)
-- **Serial merge queue** (`concurrency: { group: catalog-merge, cancel-in-progress: false }`) ensures one writer to the global catalog
-- **Scheduler** runs every 15 minutes, evaluates cron schedules, and dispatches to the correct backend workflow
-- **Maintenance** runs weekly, compacts workspace catalogs via CHECKPOINT
+| Document | Audience | What it covers |
+|----------|----------|---------------|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | Workspace creation, contract, PR flow |
+| [MAINTAINING.md](MAINTAINING.md) | Maintainers | CI/CD, DuckLake, infra, debugging |
+| [research/architecture.md](research/architecture.md) | Both | Full platform architecture |
+| [docs/secrets-setup.md](docs/secrets-setup.md) | Maintainers | Repository secrets configuration |
+| [docs/tool-versions.md](docs/tool-versions.md) | Both | Shared tool versions and deps guide |
 
 ## License
 

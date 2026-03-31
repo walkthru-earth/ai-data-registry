@@ -1,7 +1,9 @@
 ---
 paths:
-  - "**/*.sql"
-  - "**/*.py"
+  - "workspaces/**/*.sql"
+  - "workspaces/**/*.py"
+  - "research/**/*.sql"
+  - "research/**/*.py"
 ---
 # DuckDB SQL Rules
 

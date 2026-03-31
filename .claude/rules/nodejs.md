@@ -1,10 +1,10 @@
 ---
 paths:
-  - "**/*.js"
-  - "**/*.ts"
-  - "**/*.tsx"
-  - "**/*.jsx"
-  - "**/package.json"
+  - "workspaces/**/*.js"
+  - "workspaces/**/*.ts"
+  - "workspaces/**/*.tsx"
+  - "workspaces/**/*.jsx"
+  - "workspaces/**/package.json"
 ---
 # Node.js & pnpm Rules
 
