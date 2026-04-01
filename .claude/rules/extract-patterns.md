@@ -98,10 +98,11 @@ SELECT *, ST_SetCRS(ST_Point(lon, lat), 'EPSG:4326') AS geometry
 FROM raw_data;
 ```
 
-Then export with spatial sort and bbox:
+Then export with CRS, spatial sort, and bbox:
 ```sql
 COPY (
-    SELECT *, ST_Envelope(geometry) AS bbox
+    SELECT * REPLACE (ST_SetCRS(geometry, 'EPSG:4326') AS geometry),
+           ST_Envelope(geometry) AS bbox
     FROM my_table
     ORDER BY ST_Hilbert(geometry), time_col  -- spatial sort + temporal tiebreak
 ) TO '{output_dir}/{table_name}.parquet' (
