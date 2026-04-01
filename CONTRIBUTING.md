@@ -112,7 +112,7 @@ dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
 
 1. Write to S3 directly (workflow uploads via s5cmd on your behalf)
 2. Declare a `schema.table` that conflicts with another workspace
-3. Bundle credentials in code (use `$WORKSPACE_SECRET_*` env vars)
+3. Bundle credentials in code (use `$WORKSPACE_SECRET_*` env vars, see `.env.example` for local setup)
 4. Declare unsupported backends or flavors
 5. Include infrastructure configs (Terraform, provisioning scripts)
 6. Hardcode `OUTPUT_DIR` in pixi task `env`

@@ -54,9 +54,12 @@ jobs:
             -e "s|version = \"0.1.0\"|version = \"${VERSION}\"|g" \
             pixi.toml
 
-          # CLAUDE.md and .claude/ files
+          # CLAUDE.md, .claude/ files, and .env.example
           sed -i "s|ai-data-registry|${PROJECT_NAME}|g" CLAUDE.md
           find .claude -name '*.md' -exec sed -i "s|ai-data-registry|${PROJECT_NAME}|g" {} \;
+          if [ -f .env.example ]; then
+            sed -i "s|ai-data-registry|${PROJECT_NAME}|g" .env.example
+          fi
 
       - name: Clean up template files
         if: steps.config.outputs.skip != 'true'

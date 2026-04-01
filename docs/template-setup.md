@@ -39,7 +39,20 @@ It then:
 2. Removes template-specific files (`setup.sh`, `setup.ps1`, `template-setup.yml`)
 3. Runs `pixi install` to set up the environment
 
-## 3. Configure Storage (S3-Compatible)
+## 3. Configure Secrets
+
+### Local Development (.env)
+
+The setup script offers to create `.env` from `.env.example` with your S3 credentials. You can also do it manually:
+
+```bash
+cp .env.example .env
+# Edit .env with your S3 credentials
+```
+
+`.env` is gitignored and blocked from Claude Code reading (security). Never commit it.
+
+### CI/CD (GitHub Secrets)
 
 Edit `.github/registry.config.toml` if needed (defaults work for most setups), then set repository secrets.
 
@@ -111,5 +124,6 @@ These files exist only for template setup and are deleted by the setup script:
 |------|---------|
 | `setup.sh` | macOS/Linux setup script |
 | `setup.ps1` | Windows PowerShell setup script |
+| `.env.example` | Template for local development secrets |
 | `template-config.json` | Default placeholder values |
 | `.github/workflows/template-setup.yml` | One-time automated setup (deletes itself) |

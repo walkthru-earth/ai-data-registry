@@ -31,5 +31,6 @@ data/
 .env
 .env.*
 *.env
+!.env.example
 *.gitignore
 *.gitattributes

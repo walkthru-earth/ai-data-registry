@@ -231,9 +231,9 @@ ai-data-registry/
 
 If you created this repo from the GitHub template, see [docs/template-setup.md](docs/template-setup.md) for full instructions. Quick version:
 
-1. Run `./setup.sh` (or `.\setup.ps1` on Windows)
+1. Run `./setup.sh` (or `.\setup.ps1` on Windows). It generates `.env` for local secrets.
 2. Configure storage in `.github/registry.config.toml`
-3. Set repository secrets per [docs/secrets-setup.md](docs/secrets-setup.md)
+3. Set GitHub repo secrets per [docs/secrets-setup.md](docs/secrets-setup.md)
 4. Open a PR with a workspace to verify
 
 ## Shared Tools

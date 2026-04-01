@@ -97,13 +97,55 @@ find .claude -name '*.md' -exec sed -i.bak \
   -e "s|ai-data-registry|${PROJECT_NAME}|g" {} \;
 find .claude -name '*.bak' -delete
 
+# --- Replace placeholders in .env.example ----------------------------------
+
+if [[ -f ".env.example" ]]; then
+  sed -i.bak \
+    -e "s|ai-data-registry|${PROJECT_NAME}|g" \
+    .env.example && rm -f .env.example.bak
+fi
+
 # --- Clean up template-specific files --------------------------------------
 
 rm -f setup.ps1
 rm -f .github/workflows/template-setup.yml
 
+# --- Generate .env from .env.example ----------------------------------------
+
+if [[ -f ".env.example" ]] && [[ ! -f ".env" ]]; then
+  echo ""
+  read -rp "$(echo -e "${BOLD}Set up local secrets (.env)?${NC} [y/N]: ")" SETUP_ENV
+  if [[ "$SETUP_ENV" =~ ^[Yy]$ ]]; then
+    cp .env.example .env
+    echo -e "  ${GREEN}Created .env from .env.example${NC}"
+
+    read -rp "$(echo -e "  ${BOLD}S3 endpoint URL${NC} (e.g. https://fsn1.your-objectstorage.com): ")" S3_URL
+    [[ -n "$S3_URL" ]] && sed -i.bak "s|^S3_ENDPOINT_URL=.*|S3_ENDPOINT_URL=${S3_URL}|" .env && rm -f .env.bak
+
+    read -rp "$(echo -e "  ${BOLD}S3 bucket name${NC}: ")" S3_BKT
+    [[ -n "$S3_BKT" ]] && sed -i.bak "s|^S3_BUCKET=.*|S3_BUCKET=${S3_BKT}|" .env && rm -f .env.bak
+
+    read -rp "$(echo -e "  ${BOLD}S3 region${NC}: ")" S3_RGN
+    [[ -n "$S3_RGN" ]] && sed -i.bak "s|^S3_REGION=.*|S3_REGION=${S3_RGN}|" .env && rm -f .env.bak
+
+    read -rp "$(echo -e "  ${BOLD}S3 write key ID${NC}: ")" S3_KEY
+    [[ -n "$S3_KEY" ]] && sed -i.bak "s|^S3_WRITE_KEY_ID=.*|S3_WRITE_KEY_ID=${S3_KEY}|" .env && rm -f .env.bak
+
+    read -rp "$(echo -e "  ${BOLD}S3 write secret${NC}: ")" S3_SEC
+    [[ -n "$S3_SEC" ]] && sed -i.bak "s|^S3_WRITE_SECRET=.*|S3_WRITE_SECRET=${S3_SEC}|" .env && rm -f .env.bak
+
+    echo ""
+    echo -e "  ${GREEN}S3 secrets saved to .env${NC}"
+    echo -e "  ${YELLOW}For Hetzner/HuggingFace tokens, edit .env manually.${NC}"
+    echo -e "  ${YELLOW}For GitHub repo secrets (CI), see docs/secrets-setup.md${NC}"
+  else
+    echo -e "  ${YELLOW}Skipped. Copy .env.example to .env later when ready.${NC}"
+  fi
+fi
+
 # --- Install pixi environment ---------------------------------------------
 
+echo ""
 echo -e "${YELLOW}Running pixi install...${NC}"
 pixi install
 
@@ -118,6 +160,6 @@ echo -e "${GREEN}${BOLD}Done!${NC} Project '${PROJECT_NAME}' is ready."
 echo ""
 echo "Next steps:"
 echo "  1. Review pixi.toml and CLAUDE.md"
-echo "  2. Create your first workspace:  /project:new-workspace <name> <language>"
+echo "  2. Create your first workspace:  /new-workspace <name> <language>"
 echo "  3. Commit:  git add -A && git commit -m 'Initialize ${PROJECT_NAME} from template'"
 echo ""

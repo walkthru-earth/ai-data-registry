@@ -91,12 +91,56 @@ Get-ChildItem -Path '.claude' -Filter '*.md' -Recurse | ForEach-Object {
     }
 }
 
+# --- Replace placeholders in .env.example ----------------------------------
+
+if (Test-Path '.env.example') {
+    $envExample = Get-Content -Path '.env.example' -Raw
+    if ($envExample -match 'ai-data-registry') {
+        $envExample = $envExample -replace 'ai-data-registry', $ProjectName
+        Set-Content -Path '.env.example' -Value $envExample -NoNewline
+    }
+}
+
 # --- Clean up template-specific files --------------------------------------
 
 Remove-Item -Path '.github/workflows/template-setup.yml' -ErrorAction SilentlyContinue
 
+# --- Generate .env from .env.example ----------------------------------------
+
+if ((Test-Path '.env.example') -and -not (Test-Path '.env')) {
+    Write-Host ''
+    $SetupEnv = Read-Host 'Set up local secrets (.env)? [y/N]'
+    if ($SetupEnv -match '^[Yy]$') {
+        Copy-Item '.env.example' '.env'
+        Write-Host '  Created .env from .env.example' -ForegroundColor Green
+
+        $S3Url = Read-Host '  S3 endpoint URL (e.g. https://fsn1.your-objectstorage.com)'
+        if ($S3Url) { (Get-Content '.env' -Raw) -replace 'S3_ENDPOINT_URL=.*', "S3_ENDPOINT_URL=$S3Url" | Set-Content '.env' -NoNewline }
+
+        $S3Bucket = Read-Host '  S3 bucket name'
+        if ($S3Bucket) { (Get-Content '.env' -Raw) -replace 'S3_BUCKET=.*', "S3_BUCKET=$S3Bucket" | Set-Content '.env' -NoNewline }
+
+        $S3Region = Read-Host '  S3 region'
+        if ($S3Region) { (Get-Content '.env' -Raw) -replace 'S3_REGION=.*', "S3_REGION=$S3Region" | Set-Content '.env' -NoNewline }
+
+        $S3Key = Read-Host '  S3 write key ID'
+        if ($S3Key) { (Get-Content '.env' -Raw) -replace 'S3_WRITE_KEY_ID=.*', "S3_WRITE_KEY_ID=$S3Key" | Set-Content '.env' -NoNewline }
+
+        $S3Secret = Read-Host '  S3 write secret'
+        if ($S3Secret) { (Get-Content '.env' -Raw) -replace 'S3_WRITE_SECRET=.*', "S3_WRITE_SECRET=$S3Secret" | Set-Content '.env' -NoNewline }
+
+        Write-Host ''
+        Write-Host '  S3 secrets saved to .env' -ForegroundColor Green
+        Write-Host '  For Hetzner/HuggingFace tokens, edit .env manually.' -ForegroundColor Yellow
+        Write-Host '  For GitHub repo secrets (CI), see docs/secrets-setup.md' -ForegroundColor Yellow
+    } else {
+        Write-Host '  Skipped. Copy .env.example to .env later when ready.' -ForegroundColor Yellow
+    }
+}
+
 # --- Install pixi environment ---------------------------------------------
 
+Write-Host ''
 Write-Host 'Running pixi install...' -ForegroundColor Yellow
 pixi install
 
@@ -110,7 +154,6 @@ Remove-Item -Path 'setup.ps1' -ErrorAction SilentlyContinue
 Write-Host "`nDone! Project '$ProjectName' is ready.`n" -ForegroundColor Green
 Write-Host 'Next steps:'
 Write-Host "  1. Review pixi.toml and CLAUDE.md"
-Write-Host '  2. Run:  pixi install'
-Write-Host '  3. Create your first workspace:  /project:new-workspace <name> <language>'
-Write-Host "  4. Commit:  git add -A && git commit -m 'Initialize $ProjectName from template'"
+Write-Host '  2. Create your first workspace:  /new-workspace <name> <language>'
+Write-Host "  3. Commit:  git add -A && git commit -m 'Initialize $ProjectName from template'"
 Write-Host ''
