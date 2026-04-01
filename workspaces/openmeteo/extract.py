@@ -437,9 +437,11 @@ def write_parquet(db, table, order_clause, out_path, geoparquet=True):
         return 0
 
     geo_opt = ",\n            GEOPARQUET_VERSION 'BOTH'" if geoparquet else ""
+    crs = "ST_SetCRS(geometry, 'EPSG:4326') AS geometry" if geoparquet else "geometry"
     db.execute(f"""
         COPY (
-            SELECT * FROM {table}
+            SELECT * REPLACE ({crs})
+            FROM {table}
             ORDER BY {order_clause}
         ) TO '{out_path}' (
             FORMAT PARQUET,

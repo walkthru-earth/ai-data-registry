@@ -222,7 +222,8 @@ def write_states(db):
 
     db.execute(f"""
         COPY (
-            SELECT * FROM raw_states
+            SELECT * REPLACE (ST_SetCRS(geometry, 'EPSG:4326') AS geometry)
+            FROM raw_states
             ORDER BY ST_Hilbert(geometry)
         ) TO '{OUT}/states.parquet' (
             FORMAT PARQUET,
