@@ -108,15 +108,27 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
         run: |
           OUTPUT_DIR="${{ runner.temp }}/output"
-          if ls "$OUTPUT_DIR"/*.parquet 1>/dev/null 2>&1; then
-            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
-              cp "$OUTPUT_DIR/*.parquet" \
-              "s3://${S3_BUCKET}/${{ steps.schema.outputs.name }}/"
-            echo "Uploaded $(ls "$OUTPUT_DIR"/*.parquet | wc -l) Parquet file(s)."
-          else
+          SCHEMA="${{ steps.schema.outputs.name }}"
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+
+          if ! ls "$OUTPUT_DIR"/*.parquet 1>/dev/null 2>&1; then
             echo "No Parquet files found in output directory."
             exit 1
           fi
+
+          # Upload each parquet file into a table subdirectory with a
+          # timestamped filename.  This prevents overwriting previous
+          # extractions and lets DuckLake track each file independently.
+          #   s3://bucket/<schema>/<table>/<timestamp>.parquet
+          COUNT=0
+          for f in "$OUTPUT_DIR"/*.parquet; do
+            TABLE=$(basename "$f" .parquet)
+            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+              cp "$f" "s3://${S3_BUCKET}/${SCHEMA}/${TABLE}/${TIMESTAMP}.parquet"
+            COUNT=$((COUNT + 1))
+            echo "  ${TABLE}/${TIMESTAMP}.parquet"
+          done
+          echo "Uploaded ${COUNT} Parquet file(s)."
 
       - name: Upload workspace catalog to S3
         env:
