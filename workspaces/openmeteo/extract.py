@@ -121,6 +121,9 @@ def load_cities(db):
           AND lat IS NOT NULL
           AND lon IS NOT NULL
           AND city IS NOT NULL
+        QUALIFY ROW_NUMBER() OVER (
+            PARTITION BY city, country_code ORDER BY population DESC
+        ) = 1
         ORDER BY population DESC
     """).fetchall()
     countries = len(set(r[1] for r in rows))
