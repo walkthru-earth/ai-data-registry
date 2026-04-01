@@ -19,22 +19,27 @@ Each script declares its own dependencies inline (PEP 723 `# /// script` block).
 ## Shared Config Module
 
 `registry_config.py` is imported by all other scripts. It:
-- Loads `.github/registry.config.toml` (backends, flavors, storage config)
+- Loads `.github/registry.config.toml` (named storage targets, backends, flavors)
 - Discovers workspaces by scanning `workspaces/*/pixi.toml`
+- Resolves multi-storage configs and per-storage credentials
+- Builds S3 paths with `{owner}/{repo}/{branch}/` prefix (from GitHub env vars)
+- Provides `load_storage_configs()`, `get_workspace_storages()`, `build_s3_root()`, `build_catalog_path()` helpers
 - Validates workspace names (regex: `^[a-z][a-z0-9-]*$`)
+- Provides `quote_ident()` and `quote_literal()` for DuckDB SQL escaping (used by all scripts)
+- Validates S3 path inputs: repo prefix format, branch traversal (`..`), numeric PR numbers
 - Defines valid licenses, required fields, required tasks, valid modes
-- Provides `get_tables(registry)` and `get_table_checks(registry, table_name)` helpers
 
 ## CI Scripts
 
 | Script | Purpose |
 |--------|---------|
-| `registry_config.py` | Shared config: workspace discovery, table helpers |
+| `registry_config.py` | Shared config: multi-storage, path builders, workspace discovery |
 | `validate_manifest.py` | Layer 1: static analysis (fields, cron, backend, SPDX, tasks) |
 | `check_collisions.py` | Layer 2: schema.table uniqueness |
 | `check_catalog.py` | Layer 3: live DuckLake catalog compatibility |
 | `validate_output.py` | Layer 4: per-table Parquet quality checks |
-| `merge_catalog.py` | Two-phase DuckLake merge (workspace sync, then global diff) |
+| `upload_output.py` | Multi-storage upload with owner/repo/branch prefix |
+| `merge_catalog.py` | Two-phase DuckLake merge per storage (--storage flag) |
 | `find_due.py` | Scheduler: evaluate cron vs state, dispatch backends |
 | `maintenance.py` | Weekly CHECKPOINT on workspace catalogs |
 | `submit_hf_job.py` | HuggingFace Jobs: submit container, poll status |
@@ -49,5 +54,7 @@ Each script declares its own dependencies inline (PEP 723 `# /// script` block).
 - HF: container writes directly to S3 (no workflow upload step)
 - Scheduler state: workflow artifact (`scheduler-state.json`), not git
 - `issue_comment` workflows run from `main`, not the PR branch
+
+Security rules for CI scripts and workflows are in `.claude/rules/ci-security.md` (loaded on the same paths).
 
 For full workflow and infrastructure details, see @MAINTAINING.md.

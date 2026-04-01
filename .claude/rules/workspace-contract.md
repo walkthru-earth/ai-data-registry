@@ -22,6 +22,8 @@ timeout = 30                  # minutes
 tags = ["topic1", "topic2"]
 schema = "unique_name"        # S3 prefix + DuckLake schema
 mode = "append"               # append | replace | upsert
+storage = "eu-hetzner"        # optional, defaults to first defined storage
+# storage = ["eu-hetzner", "us-east"]  # replicate to multiple storages
 
 # Single table:
 table = "table_name"
@@ -66,5 +68,6 @@ dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
 4. Declare unsupported backends or flavors
 5. Hardcode `OUTPUT_DIR` in pixi task `env` (CI passes its own)
 6. Use output filenames that don't match a declared table name
+7. Declare storage targets not defined in `.github/registry.config.toml`
 
 For the full contract with multi-table examples and backend details, see @CONTRIBUTING.md.
