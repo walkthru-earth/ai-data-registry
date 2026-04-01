@@ -49,10 +49,11 @@ pixi add -w $0 --pypi <pypi-dep>   # only when not on conda-forge
    - What data license? (SPDX, e.g., `CC-BY-4.0`)
    - What is the data source name?
    - Schema name? (= S3 prefix, must be unique across all workspaces)
-   - Table name?
+   - Table name(s)? (single string for one table, or list for multiple outputs)
 
 7. **Generate the full pixi.toml** with `[tool.registry]` contract:
 
+For a single-table workspace:
 ```toml
 [tool.registry]
 description = "<user input>"
@@ -81,6 +82,28 @@ geometry = true
 unique_cols = ["<id_col>"]
 schema_match = true
 ```
+
+For a multi-table workspace (extract produces multiple parquet files):
+```toml
+[tool.registry]
+tables = ["<table_a>", "<table_b>"]
+
+[tool.registry.checks]
+schema_match = true
+
+[tool.registry.checks.<table_a>]
+min_rows = 1000
+unique_cols = ["<id_col>"]
+geometry = true
+
+[tool.registry.checks.<table_b>]
+min_rows = 0
+unique_cols = ["<id_col>"]
+geometry = false
+optional = true        # don't fail if file is missing
+```
+
+Each table name must match `^[a-z][a-z0-9_]*$` and corresponds to a `<table_name>.parquet` file in `$OUTPUT_DIR/`.
 
 8. **Delete the workspace-level pixi.lock** (root lock covers all):
 ```bash
@@ -119,7 +142,7 @@ dry-run = { cmd = "go run ./cmd/extract", env = { DRY_RUN = "1" } }
 ```
 
 10. **Create scaffold files** based on language. Use `workspaces/test-minimal/` as a reference:
-   - `extract.py` (or .js/.go) - reads `$OUTPUT_DIR` (defaults to `output/`), reads `$DRY_RUN`, writes Parquet
+   - `extract.py` (or .js/.go) - reads `$OUTPUT_DIR` (defaults to `output/`), reads `$DRY_RUN`, writes one `<table_name>.parquet` per declared table
    - `validate_local.py` - validates extracted output locally (row count, basic checks)
    - No `.gitignore` needed (root `.gitignore` covers `**/output/` and workspace `pixi.lock`)
 

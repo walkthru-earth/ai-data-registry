@@ -72,11 +72,18 @@ The workspace catalog is the workspace's ground truth. It has its own snapshots,
 
 ### 2. Global Catalog Merge (Free GitHub Runner, serial)
 
-A single merge job with `concurrency: 1`:
-1. Downloads ALL workspace catalogs + the global catalog from S3
-2. For each workspace, diffs `ducklake_list_files()` between workspace and global
-3. Registers only NEW files via `ducklake_add_data_files()` (zero-copy, metadata only)
-4. Uploads the updated global catalog back to S3
+A single merge job with `concurrency: 1` runs two phases per workspace:
+
+**Phase 1 - Sync workspace catalog:**
+1. Downloads the workspace catalog from S3 (or creates a new one)
+2. For each table in `[tool.registry].tables`, scans S3 for Parquet files under `s3://bucket/<schema>/<table>/*.parquet`
+3. Registers any files not yet tracked in the workspace catalog
+
+**Phase 2 - Merge to global:**
+1. Downloads the global catalog from S3 (or creates a new one)
+2. For each table, diffs `ducklake_list_files()` between workspace and global
+3. Registers only NEW files in the global catalog via `ducklake_add_data_files()` (zero-copy)
+4. Uploads both catalogs back to S3
 
 ```mermaid
 sequenceDiagram
@@ -105,9 +112,9 @@ sequenceDiagram
 - **Incremental**: File list diff ensures only new files are registered. No duplicates.
 - **Crash-safe**: If a workspace extraction fails, its catalog is unchanged and nothing enters global
 - **No catalog in git**: All catalogs live on S3. Pulled at runtime, pushed after mutation.
-- **No PostgreSQL**: SQLite is fine because only one process writes to each catalog at a time
+- **No PostgreSQL**: DuckDB backend is fine because only one process writes to each catalog at a time
 
-### Validated Behavior (DuckDB 1.5.1 + DuckLake + SQLite)
+### Validated Behavior (DuckDB 1.5.1 + DuckLake + DuckDB backend)
 
 | Behavior | Tested Result |
 |----------|--------------|
@@ -167,30 +174,30 @@ Run compaction only on individual workspace catalogs (which own their data paths
 s3://registry/
     .catalogs/                         # All DuckLake catalogs (DuckDB backend)
         weather.duckdb                 # Workspace catalog (workspace-owned)
-        census.duckdb
-        osm.duckdb
+        opensky-flights.duckdb
     catalog.duckdb                     # Global catalog (merge-queue-owned)
 
     weather/                           # Workspace data prefix (= schema name)
-        observations/                  # Table directory
-            year=2026/
-                ducklake-abc123.parquet
-    census/
-        population/
-            ducklake-def456.parquet
-    osm/
-        buildings/
-            ducklake-789xyz.parquet
+        observations/                  # Table subdirectory
+            20260401T060000Z.parquet   # Timestamped by extract workflow
+            20260402T060000Z.parquet
+    opensky-flights/                   # Multi-table workspace
+        states/                        # Each table gets its own subdirectory
+            20260401T000000Z.parquet
+            20260401T010000Z.parquet
+        flights/
+            20260401T000000Z.parquet
+            20260401T010000Z.parquet
 
     pr/                                # PR staging data (ephemeral, auto-cleaned)
         42/                            # PR number
             weather/
                 observations/
-                    ducklake-xyz789.parquet
+                    20260401T060000Z.parquet
         42.duckdb                      # PR-scoped workspace catalog (optional)
 ```
 
-**Rule: `schema` in pixi.toml = S3 prefix = workspace write boundary.** Each workspace can only write to its own prefix.
+**Rule: `schema` in pixi.toml = S3 prefix = workspace write boundary.** Each workspace can only write to its own prefix. The extract workflow timestamps each file to prevent overwrites and enable historical accumulation.
 
 ---
 
@@ -211,9 +218,8 @@ schedule = "0 6 * * *"        # cron: daily at 06:00 UTC
 timeout = 30                  # minutes
 tags = ["weather", "climate", "daily"]
 schema = "weather"            # DuckLake schema = S3 prefix
-table = "observations"        # DuckLake table name
+table = "observations"        # single table (or tables = ["a", "b"] for multiple)
 mode = "append"               # append | replace | upsert
-partition_by = "year(date)"   # optional DuckLake partitioning
 
 [tool.registry.runner]
 backend = "hetzner"           # Must be supported: github | hetzner | huggingface
@@ -316,7 +322,7 @@ Every workspace MUST:
 5. Have an `extract` task that writes Parquet to `$OUTPUT_DIR/`
 6. Have a `validate` task that checks output quality
 7. Have a `dry-run` task for PR validation (sample output with `DRY_RUN=1`)
-8. Declare a unique `schema.table` that no other workspace owns
+8. Declare unique `schema.table` pair(s) that no other workspace owns (supports `table` or `tables`)
 9. Exit 0 on success, non-zero on failure
 
 Every workspace MUST NOT:
@@ -344,7 +350,7 @@ sequenceDiagram
     HR->>HR: pixi run -w weather extract<br/>(writes to local $OUTPUT_DIR)
     HR->>HR: Validate output<br/>(prefix, gpio, row counts)
     Note over HR: Workflow step (not workspace code)<br/>has S3 WRITE creds
-    HR->>S3: s5cmd cp output/*.parquet<br/>s3://registry/weather/
+    HR->>S3: s5cmd cp per table<br/>s3://registry/weather/&lt;table&gt;/&lt;ts&gt;.parquet
     HR->>S3: Upload workspace catalog
 ```
 
@@ -574,9 +580,13 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
         run: |
-          pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
-            cp "${{ runner.temp }}/output/*.parquet" \
-            "s3://${{ secrets.S3_BUCKET }}/${{ inputs.workspace }}/"
+          SCHEMA="..."  # resolved from pixi.toml [tool.registry].schema
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          for f in "${{ runner.temp }}/output"/*.parquet; do
+            TABLE=$(basename "$f" .parquet)
+            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+              cp "$f" "s3://${{ secrets.S3_BUCKET }}/${SCHEMA}/${TABLE}/${TIMESTAMP}.parquet"
+          done
 ```
 
 ### Backend: Hetzner Cloud (`backend = "hetzner"`)
@@ -643,9 +653,13 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
         run: |
-          pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
-            cp "${{ runner.temp }}/output/*.parquet" \
-            "s3://${{ secrets.S3_BUCKET }}/${{ inputs.workspace }}/"
+          SCHEMA="..."  # resolved from pixi.toml [tool.registry].schema
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          for f in "${{ runner.temp }}/output"/*.parquet; do
+            TABLE=$(basename "$f" .parquet)
+            pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
+              cp "$f" "s3://${{ secrets.S3_BUCKET }}/${SCHEMA}/${TABLE}/${TIMESTAMP}.parquet"
+          done
 
   delete-runner:
     needs: [create-runner, extract]
