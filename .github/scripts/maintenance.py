@@ -133,21 +133,22 @@ def maintain_catalog(
         return False
 
     try:
-        # Set maintenance options
+        # Disable compaction to protect files shared with the global catalog.
+        # CHECKPOINT with auto_compact=false skips merge_adjacent_files and
+        # rewrite_data_files, but still runs expire_snapshots, cleanup_old_files,
+        # and delete_orphaned_files. Without this, compaction consolidates files
+        # into new ones and schedules the originals for deletion. The global
+        # catalog still references those originals via zero-copy merge, so
+        # deleting them breaks global catalog queries.
+        con.execute("CALL ws.set_option('auto_compact', false)")
         con.execute("CALL ws.set_option('expire_older_than', '30 days')")
         con.execute("CALL ws.set_option('delete_older_than', '7 days')")
 
-        # Run all-in-one CHECKPOINT (v0.4+)
+        # Run CHECKPOINT (v0.4+). With auto_compact=false this runs:
+        # expire_snapshots, cleanup_old_files, delete_orphaned_files
         con.execute("USE ws")
         con.execute("CHECKPOINT")
-        print(f"    CHECKPOINT completed.")
-
-        # Also clean up orphaned files from crashed writes
-        try:
-            con.execute("CALL ducklake_delete_orphaned_files('ws', older_than => now() - INTERVAL '7 days')")
-            print(f"    Orphan cleanup completed.")
-        except duckdb.Error:
-            pass  # Function may not exist in older versions
+        print(f"    CHECKPOINT completed (auto_compact=false, shared files protected).")
 
     except duckdb.Error as e:
         print(f"    WARNING: Maintenance failed: {e}")

@@ -289,17 +289,35 @@ def main():
     else:
         print(f"  PASS: All IDs unique across batches")
 
-    # ── Step 8: Test CHECKPOINT (maintenance)
-    step("Step 8: Run CHECKPOINT (maintenance)")
+    # ── Step 8: Test CHECKPOINT (maintenance on workspace, not global)
+    step("Step 8: Run CHECKPOINT on workspace catalog")
+
+    # CHECKPOINT must run on workspace catalogs, never on the global catalog.
+    # Global catalog has auto_compact=false, but CHECKPOINT still runs
+    # expire_snapshots + cleanup_old_files which could delete shared files.
+    # Production maintenance.py also sets auto_compact=false on workspace
+    # catalogs to protect files shared with the global catalog.
+    con.execute("DETACH global_cat")
+    con.execute("DETACH ws")
+
+    con2 = duckdb.connect()
+    con2.execute("INSTALL ducklake; LOAD ducklake;")
+    con2.execute(f"""
+        ATTACH 'ducklake:{ws_catalog}' AS ws (
+            DATA_PATH '{data_dir}/'
+        )
+    """)
+    con2.execute("CALL ws.set_option('auto_compact', false)")
 
     try:
-        con.execute("USE global_cat")
-        con.execute("CHECKPOINT")
-        print("  PASS: CHECKPOINT completed")
+        con2.execute("USE ws")
+        con2.execute("CHECKPOINT")
+        print("  PASS: CHECKPOINT completed (auto_compact=false)")
     except duckdb.Error as e:
         print(f"  FAIL: CHECKPOINT failed: {e}")
         errors += 1
 
+    con2.close()
     con.close()
 
     # ── Summary

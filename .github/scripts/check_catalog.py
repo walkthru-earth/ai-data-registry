@@ -34,6 +34,7 @@ from scripts.registry_config import (
     WORKSPACES_DIR,
     build_global_catalog_path,
     get_default_storage_name,
+    get_tables,
     parse_workspace_registry,
     quote_literal,
     resolve_storage_env,
@@ -72,10 +73,10 @@ def check_catalog(workspace_name: str) -> list[str]:
         return errors
 
     schema = registry.get("schema", "")
-    table = registry.get("table", "")
+    tables = get_tables(registry)
     mode = registry.get("mode", "append")
 
-    if not schema or not table:
+    if not schema or not tables:
         return errors  # Already caught by Layer 1
 
     storage_name = get_default_storage_name()
@@ -102,46 +103,8 @@ def check_catalog(workspace_name: str) -> list[str]:
                 print(f"  WARNING: Could not attach global catalog: {e}")
                 return errors
 
-            # Check if table exists
-            try:
-                result = con.execute(f"""
-                    SELECT COUNT(*) FROM ducklake_list_files('global_cat', {quote_literal(table)}, schema => {quote_literal(schema)})
-                """).fetchone()
-                file_count = result[0] if result else 0
-
-                if file_count > 0:
-                    if mode == "replace":
-                        print(f"  INFO: Table {schema}.{table} exists ({file_count} files). Mode is 'replace', will overwrite.")
-                    elif mode == "append":
-                        print(f"  INFO: Table {schema}.{table} exists ({file_count} files). Mode is 'append', checking schema compatibility...")
-
-                        # Verify column names and types match between workspace and global catalog
-                        try:
-                            global_cols = con.execute("""
-                                SELECT column_name, data_type
-                                FROM information_schema.columns
-                                WHERE table_catalog = 'global_cat'
-                                  AND table_schema = ?
-                                  AND table_name = ?
-                                ORDER BY ordinal_position
-                            """, [schema, table]).fetchall()
-
-                            if global_cols:
-                                # Read the workspace's pixi.toml to find output schema
-                                # (would need a dry-run output to compare, so just check column names exist)
-                                global_col_names = {col[0] for col in global_cols}
-                                print(f"  INFO: Global catalog has {len(global_col_names)} column(s). Schema compatibility will be fully verified during merge.")
-                        except duckdb.Error as e:
-                            print(f"  WARNING: Could not read global catalog schema: {e}")
-
-                    elif mode == "upsert":
-                        print(f"  INFO: Table {schema}.{table} exists ({file_count} files). Mode is 'upsert'.")
-                else:
-                    print(f"  INFO: Table {schema}.{table} is new (no existing files in global catalog).")
-
-            except duckdb.Error:
-                # Table doesn't exist yet, that's fine
-                print(f"  INFO: Table {schema}.{table} does not exist in global catalog yet. Will be created on first extraction.")
+            for table in tables:
+                _check_table(con, schema, table, mode)
 
             con.close()
 
@@ -149,6 +112,45 @@ def check_catalog(workspace_name: str) -> list[str]:
             print("  WARNING: duckdb Python package not available. Skipping catalog schema check.")
 
     return errors
+
+
+def _check_table(con, schema: str, table: str, mode: str):
+    """Check a single table against the global catalog."""
+    try:
+        result = con.execute(f"""
+            SELECT COUNT(*) FROM ducklake_list_files('global_cat', {quote_literal(table)}, schema => {quote_literal(schema)})
+        """).fetchone()
+        file_count = result[0] if result else 0
+
+        if file_count > 0:
+            if mode == "replace":
+                print(f"  INFO: Table {schema}.{table} exists ({file_count} files). Mode is 'replace', will overwrite.")
+            elif mode == "append":
+                print(f"  INFO: Table {schema}.{table} exists ({file_count} files). Mode is 'append', checking schema compatibility...")
+
+                try:
+                    global_cols = con.execute("""
+                        SELECT column_name, data_type
+                        FROM information_schema.columns
+                        WHERE table_catalog = 'global_cat'
+                          AND table_schema = ?
+                          AND table_name = ?
+                        ORDER BY ordinal_position
+                    """, [schema, table]).fetchall()
+
+                    if global_cols:
+                        global_col_names = {col[0] for col in global_cols}
+                        print(f"  INFO: Global catalog has {len(global_col_names)} column(s). Schema compatibility will be fully verified during merge.")
+                except duckdb.Error as e:
+                    print(f"  WARNING: Could not read global catalog schema for {schema}.{table}: {e}")
+
+            elif mode == "upsert":
+                print(f"  INFO: Table {schema}.{table} exists ({file_count} files). Mode is 'upsert'.")
+        else:
+            print(f"  INFO: Table {schema}.{table} is new (no existing files in global catalog).")
+
+    except duckdb.Error:
+        print(f"  INFO: Table {schema}.{table} does not exist in global catalog yet. Will be created on first extraction.")
 
 
 def main():
