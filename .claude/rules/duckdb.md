@@ -7,63 +7,66 @@ paths:
 ---
 # DuckDB SQL Rules
 
-- Run DuckDB via `pixi run duckdb` to use the project-managed version
-- Use DuckDB SQL dialect, not PostgreSQL or MySQL syntax
-- Friendly SQL: `FROM table` without SELECT, `GROUP BY ALL`, `ORDER BY ALL`, `EXCLUDE`, `REPLACE`
-- For spatial queries: `INSTALL spatial; LOAD spatial;` must be called first
-- Use `ST_*` functions for geometry operations (ST_Read, ST_Area, ST_Distance, etc.)
-- Prefer `read_parquet()` and `read_csv_auto()` for file-based queries
-- For GeoParquet: `SELECT * FROM ST_Read('file.parquet')`
-- Use CTEs to break complex queries into readable parts
-- Use `QUALIFY` for window function filtering
-- Use `arg_max()`/`arg_min()` for "most recent" patterns
-- JSON access: `col->>'key'` returns text, `col->'$.path'` returns JSON
+Run via `pixi run duckdb`. Use the **duckdb** skill for detailed references.
 
-## DuckDB → GeoParquet Best Practices
-When writing GeoParquet from DuckDB, apply optimizations manually:
+## Skill Routing
+
+Load the right reference based on what you are doing:
+
+| Task | Read |
+|------|------|
+| Spatial ops, ST_* functions, CRS | [spatial.md](../skills/duckdb/references/spatial.md) |
+| ArcGIS REST queries | [arcgis.md](../skills/duckdb/references/arcgis.md) |
+| DuckLake catalogs, time travel | [ducklake.md](../skills/duckdb/references/ducklake.md) |
+| H3 hex grid (LAT, LNG order) | [h3.md](../skills/duckdb/references/h3.md) |
+| A5 penta grid (LON, LAT order) | [a5.md](../skills/duckdb/references/a5.md) |
+| S2 spherical geography | [geography.md](../skills/duckdb/references/geography.md) |
+| File reading (CSV, Parquet, S3) | [read-file.md](../skills/duckdb/references/read-file.md) |
+| Session state, credentials | [state.md](../skills/duckdb/references/state.md) |
+
+## Pitfalls (memorize these)
+
+**CRS must be VARCHAR, never INTEGER:**
+```sql
+-- WRONG: ST_SetCRS(geom, 4326)
+-- RIGHT:
+ST_SetCRS(geom, 'EPSG:4326')
+ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')  -- both source AND target required
+```
+Same rule applies to `arcgis_read(url, crs)` and `arcgis_read_json(url, crs)`.
+
+**ST_Distance on EPSG:4326 returns degrees, not meters.** Project first or use `ST_Distance_Spheroid`:
+```sql
+-- Degrees (wrong for most use cases):
+ST_Distance(a.geom, b.geom)
+-- Meters (correct):
+ST_Distance_Spheroid(a.geom, b.geom)
+```
+
+**Grid index coordinate order differs:**
+- H3: `h3_latlng_to_cell(latitude, longitude, res)` (LAT, LNG)
+- A5: `a5_lonlat_to_cell(longitude, latitude, res)` (LON, LAT)
+- S2: `s2_cellfromlonlat(longitude, latitude)` (LON, LAT)
+
+**S3 credentials: `SET s3_*` vs `CREATE SECRET`:**
+- `SET s3_*` works for direct Parquet reads (`FROM 's3://...'`)
+- `CREATE SECRET` required for DuckLake ATTACH and credential_chain
+- Dots in bucket names (e.g. `source.coop`): `SET s3_url_style = 'path';`
+
+**Integer dates need explicit casting:**
+```sql
+-- WRONG: WHERE date_col >= CURRENT_DATE - INTERVAL '7 days'  (if date_col is INTEGER)
+-- RIGHT:
+WHERE strptime(date_col::VARCHAR, '%Y%m%d')::DATE >= CURRENT_DATE - INTERVAL '7 days'
+```
+
+## GeoParquet Output
+
 ```sql
 COPY (
-    SELECT *, ST_Envelope(geometry) as bbox
+    SELECT *, ST_Envelope(geometry) AS bbox
     FROM read_parquet('input.parquet')
     ORDER BY ST_Hilbert(geometry)
-) TO 'output.parquet' (
-    FORMAT PARQUET, COMPRESSION ZSTD, COMPRESSION_LEVEL 15, ROW_GROUP_SIZE 100000
-);
+) TO 'output.parquet' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000);
 ```
 Then validate: `pixi run gpio check all output.parquet`
-
-## Common Pitfalls
-- **ST_SetCRS requires VARCHAR, not INTEGER**: `ST_SetCRS(geom, 4326)` fails. Always pass a string: `ST_SetCRS(geom, 'EPSG:4326')`. This applies to `arcgis_read(url, crs)` and `arcgis_read_json(url, crs)` too.
-- **INTEGER vs DATE comparison**: DuckDB does NOT auto-cast integers to dates. If a column stores dates as integers (e.g., `20260324`), cast explicitly before comparing:
-  ```sql
-  -- WRONG: AND SQLDATE >= CURRENT_DATE - INTERVAL '7 days'
-  -- RIGHT: Cast the integer column to a DATE first
-  AND CAST(SQLDATE::VARCHAR AS DATE) >= CURRENT_DATE - INTERVAL '7 days'
-  -- Or use strptime:
-  AND strptime(SQLDATE::VARCHAR, '%Y%m%d')::DATE >= CURRENT_DATE - INTERVAL '7 days'
-  ```
-- **File not found after failed COPY**: If a query fails mid-COPY, the output file won't exist. Subsequent queries referencing it will fail with "No files found". Fix the source query first.
-
-## S3 Access Tips
-- S3 buckets with dots in the name (e.g., `source.coop`) need path-style URLs because virtual-hosted style breaks SSL certificate validation:
-  ```sql
-  SET s3_url_style = 'path';
-  ```
-- **DuckLake remote attach requires `CREATE SECRET`**, not `SET s3_*` variables. See `ducklake.md` for full details.
-- `SET s3_*` variables work for direct Parquet reads (`FROM 's3://...'`) but not for `ATTACH 'ducklake:s3://...'`
-- Use `CREATE SECRET` with `PROVIDER credential_chain` for automatic credential discovery
-- For public buckets: `SET s3_access_key_id = ''; SET s3_secret_access_key = '';`
-
-## SQL Reference Files
-- `.sql` files in `.claude/skills/duckdb/references/` (e.g., `state.sql`, `arcgis.sql`) are runtime files loaded via `-init`. Reading them requires user approval (ask permission in `settings.json`).
-- Prefer the `.md` documentation first (e.g., `arcgis.md` documents all ArcGIS macros, `state.md` documents session state).
-- To use the macros, pass the `.sql` file to DuckDB: `pixi run duckdb -init ".claude/skills/duckdb/references/arcgis.sql"`
-
-## Session State
-- Use the **duckdb** skill ([state.md](../skills/duckdb/references/state.md) reference) to initialize and manage `state.sql` (extensions, credentials, macros)
-- State file location: `.claude/skills/duckdb/references/state.sql`
-- Core extensions pre-loaded in state: spatial, httpfs, fts
-
-## Cross-references
-- **duckdb** skill → unified DuckDB hub with references for query execution, file reading, spatial analysis, ArcGIS macros, docs search, extension management, session state
-- **geoparquet** skill → validate and optimize GeoParquet output from DuckDB
