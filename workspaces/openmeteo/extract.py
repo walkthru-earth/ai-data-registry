@@ -189,18 +189,29 @@ def load_dry_run_cities(db):
     return rows
 
 
-def fetch_json(url, retries=3, delay=1.0):
-    """Fetch JSON from URL with retry logic."""
+def fetch_json(url, retries=5, delay=2.0):
+    """Fetch JSON from URL with retry logic and rate-limit awareness."""
     for attempt in range(retries):
         try:
             req = urllib.request.Request(url)
             req.add_header("User-Agent", "ai-data-registry/openmeteo")
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                wait = delay * (2 ** attempt)
+                log.warning("Rate limited (429), waiting %.0fs (attempt %d/%d)", wait, attempt + 1, retries)
+                time.sleep(wait)
+            elif attempt < retries - 1:
+                log.warning("Retry %d/%d after HTTP %d: %s", attempt + 1, retries, e.code, e)
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
         except (urllib.error.URLError, TimeoutError) as e:
             if attempt < retries - 1:
-                log.warning("Retry %d/%d after error: %s", attempt + 1, retries, e)
-                time.sleep(delay * (attempt + 1))
+                wait = delay * (attempt + 1)
+                log.warning("Retry %d/%d after error: %s (waiting %.0fs)", attempt + 1, retries, e, wait)
+                time.sleep(wait)
             else:
                 raise
 
@@ -364,10 +375,15 @@ def extract_weather(db, cities):
                     rows,
                 )
 
+        batch_num = batch_start // BATCH_SIZE + 1
+        total_batches = (len(cities) + BATCH_SIZE - 1) // BATCH_SIZE
         done = min(batch_start + BATCH_SIZE, len(cities))
-        log.debug("Weather: %d/%d cities", done, len(cities))
+        if batch_num % 10 == 0 or batch_num == total_batches:
+            log.info("Weather: %d/%d cities (batch %d/%d)", done, len(cities), batch_num, total_batches)
+        else:
+            log.debug("Weather: %d/%d cities (batch %d/%d)", done, len(cities), batch_num, total_batches)
         if batch_start + BATCH_SIZE < len(cities):
-            time.sleep(0.3)
+            time.sleep(0.6)
 
     h = db.execute("SELECT COUNT(*) FROM weather_hourly").fetchone()[0]
     d = db.execute("SELECT COUNT(*) FROM weather_daily").fetchone()[0]
@@ -427,10 +443,15 @@ def extract_air_quality(db, cities):
                     rows,
                 )
 
+        batch_num = batch_start // BATCH_SIZE + 1
+        total_batches = (len(cities) + BATCH_SIZE - 1) // BATCH_SIZE
         done = min(batch_start + BATCH_SIZE, len(cities))
-        log.debug("Air quality: %d/%d cities", done, len(cities))
+        if batch_num % 10 == 0 or batch_num == total_batches:
+            log.info("Air quality: %d/%d cities (batch %d/%d)", done, len(cities), batch_num, total_batches)
+        else:
+            log.debug("Air quality: %d/%d cities (batch %d/%d)", done, len(cities), batch_num, total_batches)
         if batch_start + BATCH_SIZE < len(cities):
-            time.sleep(0.3)
+            time.sleep(0.6)
 
     count = db.execute("SELECT COUNT(*) FROM air_quality").fetchone()[0]
     log.info("Air quality total: %d", count)
