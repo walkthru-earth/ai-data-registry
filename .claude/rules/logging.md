@@ -1,3 +1,7 @@
+---
+paths:
+  - "workspaces/**/*.py"
+---
 # Python Logging Rules
 
 All workspace scripts (extract, validate) MUST use Python's `logging` module, never bare `print()` statements.

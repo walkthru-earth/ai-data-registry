@@ -1,39 +1,24 @@
+---
+paths:
+  - "workspaces/**/*.py"
+  - "workspaces/**/*.js"
+  - "workspaces/**/*.ts"
+  - "workspaces/**/*.sql"
+  - "workspaces/**/*.sh"
+  - "**/pixi.toml"
+---
 # Tool Execution Rules
 
-All CLI tools MUST be run through pixi to ensure the correct versions and environment.
+All CLI tools MUST be run through pixi. Never run directly.
 
-## Shared Tools (from root pixi.toml)
+| Tool | Command |
+|------|---------|
+| DuckDB | `pixi run duckdb` |
+| GDAL | `pixi run gdal` (unified CLI, NOT legacy ogr2ogr/gdalinfo) |
+| gpio | `pixi run gpio` |
+| Python | `pixi run python` |
+| Node.js | `pixi run node` |
+| pnpm | `pixi run pnpm` (NEVER npm/yarn) |
+| s5cmd | `pixi run s5cmd` |
 
-| Tool | Command | What it does |
-|------|---------|------|
-| DuckDB | `pixi run duckdb` | SQL engine, spatial, Parquet |
-| GDAL | `pixi run gdal` | Vector/raster I/O (new unified CLI) |
-| gpio | `pixi run gpio` | GeoParquet optimization/validation |
-| Python | `pixi run python` | Python runtime |
-| Node.js | `pixi run node` | Node.js runtime |
-| pnpm | `pixi run pnpm` | Node package manager (NEVER npm/yarn) |
-| s5cmd | `pixi run s5cmd` | Parallel S3 uploads/downloads |
-
-## Running from Root vs Workspace
-
-### From project root (shared tools)
-```bash
-pixi run duckdb -csv -c "SELECT 42"
-pixi run gdal info input.gpkg
-pixi run gpio inspect summary input.parquet
-```
-
-### From root targeting a specific workspace
-```bash
-pixi run -w <workspace> <task>
-pixi add -w <workspace> <pkg>
-```
-
-## Never Run Directly
-- Do NOT run `duckdb` directly — always `pixi run duckdb`
-- Do NOT run `gdal` directly — always `pixi run gdal`
-- Do NOT run `gpio` directly — always `pixi run gpio`
-- Do NOT run `npm` — always `pixi run pnpm`
-- Do NOT run `python` directly — always `pixi run python`
-- Do NOT run `s5cmd` directly — always `pixi run s5cmd`
-- This ensures version consistency across platforms and workspaces
+Shared tools from root: `pixi run <tool>`. Workspace tasks: `pixi run -w <workspace> <task>`.
