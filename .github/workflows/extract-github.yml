@@ -1,4 +1,5 @@
 name: "Extract (GitHub Runner)"
+run-name: "Extract (GitHub): ${{ inputs.workspace }}"
 
 on:
   workflow_call:

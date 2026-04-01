@@ -1,4 +1,5 @@
 name: PR Cleanup (Staging Data)
+run-name: "PR Cleanup: #${{ inputs.pr_number || github.event.pull_request.number }}"
 
 # Automatically clean up staging data when a PR is closed or merged.
 # Deletes s3://bucket/pr/{pr_number}/ and any PR-scoped catalog files.

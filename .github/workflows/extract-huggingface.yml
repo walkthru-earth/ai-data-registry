@@ -1,4 +1,5 @@
 name: "Extract (HuggingFace Jobs)"
+run-name: "Extract (HuggingFace): ${{ inputs.workspace }}"
 
 on:
   workflow_call:

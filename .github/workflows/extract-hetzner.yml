@@ -1,4 +1,5 @@
 name: "Extract (Hetzner Runner)"
+run-name: "Extract (Hetzner): ${{ inputs.workspace }}"
 
 on:
   workflow_call:

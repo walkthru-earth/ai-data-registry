@@ -1,4 +1,5 @@
 name: Merge Catalog
+run-name: "Merge Catalog: ${{ inputs.workspace }}"
 
 on:
   workflow_dispatch:

@@ -1,4 +1,5 @@
 name: "PR Extract (Staging)"
+run-name: "PR Extract: #${{ inputs.pr_number || github.event.issue.number }} ${{ inputs.workspace || '' }}"
 
 # Maintainer-triggered full extraction on PR data.
 # Uploads to s3://bucket/pr/{pr_number}/{schema}/ instead of production paths.
