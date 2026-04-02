@@ -24,7 +24,7 @@ timeout = 30
 tags = ["weather", "climate", "air-quality", "forecast", "global", "open-meteo", "temperature", "precipitation"]
 schema = "openmeteo"
 tables = ["weather_hourly", "weather_daily", "air_quality"]
-mode = "append"
+mode = "replace"
 
 [tool.registry.runner]
 backend = "github"

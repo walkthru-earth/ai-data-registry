@@ -7,10 +7,9 @@ Two data streams, each producing a separate GeoParquet file:
    Dedup key: (icao24, snapshot_time). No overlap between hourly runs.
 
 2. **flights** (`/api/flights/all?begin=...&end=...`): Completed flights
-   with estimated departure/arrival airports. 2-hour lookback window.
-   Overlaps between consecutive hourly runs, so dedup is essential.
-   Dedup key: (icao24, first_seen). Same flight returned by consecutive
-   calls gets the same (icao24, first_seen) pair.
+   with estimated departure/arrival airports. 1-hour lookback window
+   matching the hourly cron schedule to avoid overlap between runs.
+   Dedup key: (icao24, first_seen).
 
 DuckLake partitioning: day(snapshot_time), hour(snapshot_time) for states.
 DuckLake partitioning: day(last_seen) for flights.
@@ -96,17 +95,16 @@ def extract_states(db):
 
 
 def extract_flights(db):
-    """Fetch completed flights from /api/flights/all (last 2 hours).
+    """Fetch completed flights from /api/flights/all (last 1 hour).
 
     Anonymous access returns recently completed flights with estimated
-    departure/arrival airports. The 2-hour window is the API maximum.
-    Consecutive hourly runs will overlap by ~1 hour, producing duplicates
-    for flights that completed in the overlap window.
+    departure/arrival airports. Window matches the hourly cron schedule
+    to avoid overlap between consecutive runs.
 
     Returns 0 if the endpoint fails (non-critical, states is the primary).
     """
     now = int(time.time())
-    begin = now - 7200  # 2 hours ago (API maximum window)
+    begin = now - 3600  # 1 hour ago, matches the hourly cron schedule
     url = f"{FLIGHTS_URL}?begin={begin}&end={now}"
 
     log.info("Fetching completed flights from OpenSky Network...")
