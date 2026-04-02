@@ -6,7 +6,6 @@
 
 Usage:
     uv run upload_output.py --workspace <name> --output-dir <path> --timestamp <ts>
-    uv run upload_output.py --workspace <name> --output-dir <path> --timestamp <ts> --catalog <path>
 
 Reads workspace pixi.toml for schema, tables, and storage targets.
 Reads registry.config.toml for storage configs and credential mappings.
@@ -32,12 +31,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from scripts.registry_config import (
     WORKSPACE_NAME_RE,
-    build_catalog_path,
     build_s3_root,
     get_workspace_storages,
     parse_workspace_registry,
     s5cmd_for_storage,
-    REPO_ROOT,
     WORKSPACES_DIR,
 )
 
@@ -73,26 +70,11 @@ def upload_data(
     return count, errors
 
 
-def upload_catalog(storage_name: str, workspace: str, catalog_path: str) -> bool:
-    """Upload a workspace catalog to a storage target."""
-    if not os.path.isfile(catalog_path):
-        print(f"  [{storage_name}] No catalog file at {catalog_path}, skipping.")
-        return True
-    dest = build_catalog_path(storage_name, workspace)
-    result = s5cmd_for_storage(storage_name, "cp", catalog_path, dest)
-    if result.returncode != 0:
-        print(f"  [{storage_name}] Failed to upload catalog: {result.stderr.strip()}")
-        return False
-    print(f"  [{storage_name}] Uploaded workspace catalog.")
-    return True
-
-
 def main():
     parser = argparse.ArgumentParser(description="Upload workspace output to storage targets.")
     parser.add_argument("--workspace", required=True, help="Workspace name")
     parser.add_argument("--output-dir", required=True, help="Directory containing .parquet files")
     parser.add_argument("--timestamp", required=True, help="Timestamp for filenames (e.g. 20260401T060000Z)")
-    parser.add_argument("--catalog", default="", help="Path to workspace catalog file to upload")
     args = parser.parse_args()
 
     if not WORKSPACE_NAME_RE.match(args.workspace):
@@ -121,11 +103,6 @@ def main():
         count, errors = upload_data(storage_name, schema, args.output_dir, args.timestamp)
         total_count += count
         total_errors.extend(errors)
-
-        # Upload catalog if provided
-        if args.catalog:
-            if not upload_catalog(storage_name, args.workspace, args.catalog):
-                total_errors.append(f"Catalog upload failed for {storage_name}")
 
     print(f"\nUploaded {total_count} file(s) across {len(storages)} storage(s).")
 

@@ -6,12 +6,10 @@
 # ///
 """Local test for DuckLake catalog merge logic (no S3 needed).
 
-Creates workspace + global catalogs as local DuckDB files,
-simulates extract -> merge -> query -> incremental merge.
+Tests single global catalog with direct S3 scan simulation.
+Covers append mode, replace mode, and CHECKPOINT (with compaction).
 
 CRITICAL: Catalog files use the DuckDB backend (.duckdb), NOT SQLite (.ducklake).
-DuckDB catalogs support remote S3/HTTPS read-only access via httpfs.
-SQLite catalogs do NOT support remote access (blocked by duckdb/ducklake#912).
 
 Usage: uv run .github/scripts/test_local_merge.py
 """
@@ -22,7 +20,6 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import Path
 
 import duckdb
 
@@ -38,11 +35,10 @@ def main():
     data_dir = os.path.join(tmpdir, "data")
     os.makedirs(data_dir)
 
-    ws_catalog = os.path.join(tmpdir, "test-minimal.duckdb")
     global_catalog = os.path.join(tmpdir, "catalog.duckdb")
     errors = 0
 
-    # ── Step 1: Extract test data (simulates pixi run --manifest-path workspaces/test-minimal/pixi.toml pipeline)
+    # ── Step 1: Generate test Parquet files (batch 1)
     step("Step 1: Generate test Parquet files (batch 1)")
 
     con = duckdb.connect()
@@ -58,110 +54,40 @@ def main():
     print(f"  Wrote {batch1_path}")
     con.close()
 
-    # ── Step 2: Create workspace catalog and register batch 1
-    step("Step 2: Create workspace DuckLake catalog")
+    # ── Step 2: Create global catalog and register batch 1 directly
+    step("Step 2: Create global catalog, scan and register files")
 
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
 
-    con.execute(f"""
-        ATTACH 'ducklake:{ws_catalog}' AS ws (
-            DATA_PATH '{data_dir}/'
-        )
-    """)
-    print(f"  Attached workspace catalog: {ws_catalog}")
-
-    con.execute("CREATE SCHEMA IF NOT EXISTS ws.\"test-minimal\"")
-    con.execute("""
-        CREATE TABLE ws."test-minimal".data AS
-        SELECT * FROM read_parquet(?)
-    """, [batch1_path])
-
-    files = con.execute("""
-        SELECT data_file
-        FROM ducklake_list_files('ws', 'data', schema => 'test-minimal')
-    """).fetchall()
-    print(f"  Workspace catalog has {len(files)} file(s)")
-
-    ws_cols = con.execute("""
-        SELECT column_name, data_type
-        FROM information_schema.columns
-        WHERE table_catalog = 'ws'
-          AND table_schema = 'test-minimal'
-          AND table_name = 'data'
-        ORDER BY ordinal_position
-    """).fetchall()
-    print(f"  Schema: {[(c, t) for c, t in ws_cols]}")
-    con.close()
-
-    # ── Step 3: Merge workspace catalog into global catalog (first merge)
-    step("Step 3: Merge into global catalog (first merge)")
-
-    con = duckdb.connect()
-    con.execute("INSTALL ducklake; LOAD ducklake;")
-
-    # Attach workspace (read-only)
-    con.execute(f"""
-        ATTACH 'ducklake:{ws_catalog}' AS ws (READ_ONLY)
-    """)
-
-    # Attach global (create new)
     con.execute(f"""
         ATTACH 'ducklake:{global_catalog}' AS global_cat (
             DATA_PATH '{data_dir}/'
         )
     """)
-    print(f"  Created global catalog: {global_catalog}")
+    print(f"  Attached global catalog: {global_catalog}")
 
-    # Disable auto_compact on global
-    try:
-        con.execute("CALL global_cat.set_option('auto_compact', false)")
-        print("  Set auto_compact = false on global catalog")
-    except duckdb.Error as e:
-        print(f"  WARNING: Could not set auto_compact: {e}")
+    # Create table from file schema
+    con.execute('CREATE SCHEMA IF NOT EXISTS global_cat."test-minimal"')
+    con.execute(f"""
+        CREATE TABLE global_cat."test-minimal".data AS
+        SELECT * FROM read_parquet('{batch1_path}') LIMIT 0
+    """)
 
-    # Table doesn't exist yet in global, create it
-    con.execute("CREATE SCHEMA IF NOT EXISTS global_cat.\"test-minimal\"")
+    # Simulate scan + register (like merge_catalog.py merge_table)
+    con.execute(f"""
+        CALL ducklake_add_data_files('global_cat', 'data', '{batch1_path}',
+            schema => 'test-minimal',
+            allow_missing => true,
+            ignore_extra_columns => true
+        )
+    """)
 
-    col_defs = ", ".join(f'"{name}" {dtype}' for name, dtype in ws_cols)
-    con.execute(f'CREATE TABLE global_cat."test-minimal".data ({col_defs})')
-    print(f"  Created table test-minimal.data in global catalog")
-
-    # Get files from workspace catalog
-    ws_files = con.execute("""
-        SELECT data_file
-        FROM ducklake_list_files('ws', 'data', schema => 'test-minimal')
+    count = con.execute('SELECT COUNT(*) FROM global_cat."test-minimal".data').fetchone()[0]
+    files = con.execute("""
+        SELECT data_file FROM ducklake_list_files('global_cat', 'data', schema => 'test-minimal')
     """).fetchall()
-
-    # Get files from global catalog (should be empty)
-    try:
-        global_files = con.execute("""
-            SELECT data_file
-            FROM ducklake_list_files('global_cat', 'data', schema => 'test-minimal')
-        """).fetchall()
-    except duckdb.Error:
-        global_files = []
-
-    global_set = {f[0] for f in global_files}
-    new_files = [f[0] for f in ws_files if f[0] not in global_set]
-    print(f"  New files to register: {len(new_files)}")
-
-    # Register new files
-    for file_path in new_files:
-        con.execute(f"""
-            CALL ducklake_add_data_files('global_cat', 'data', '{file_path}',
-                schema => 'test-minimal',
-                allow_missing => true,
-                ignore_extra_columns => true
-            )
-        """)
-    print(f"  Registered {len(new_files)} file(s) in global catalog")
-
-    # Verify
-    count = con.execute("""
-        SELECT COUNT(*) FROM global_cat."test-minimal".data
-    """).fetchone()[0]
-    print(f"  Global catalog row count: {count}")
+    print(f"  Global catalog: {count} rows, {len(files)} file(s)")
 
     if count != 100:
         print(f"  FAIL: Expected 100 rows, got {count}")
@@ -171,8 +97,8 @@ def main():
 
     con.close()
 
-    # ── Step 4: Simulate incremental extract (batch 2)
-    step("Step 4: Generate batch 2 (incremental)")
+    # ── Step 3: Generate batch 2 (incremental append)
+    step("Step 3: Generate batch 2 and incremental merge (append)")
 
     con = duckdb.connect()
     batch2_path = os.path.join(data_dir, "batch2.parquet")
@@ -187,57 +113,22 @@ def main():
     print(f"  Wrote {batch2_path}")
     con.close()
 
-    # ── Step 5: Add batch 2 to workspace catalog
-    step("Step 5: Append batch 2 to workspace catalog")
-
     con = duckdb.connect()
     con.execute("INSTALL ducklake; LOAD ducklake;")
-
-    con.execute(f"""
-        ATTACH 'ducklake:{ws_catalog}' AS ws (
-            DATA_PATH '{data_dir}/'
-        )
-    """)
-
-    con.execute("""
-        INSERT INTO ws."test-minimal".data
-        SELECT * FROM read_parquet(?)
-    """, [batch2_path])
-
-    ws_count = con.execute('SELECT COUNT(*) FROM ws."test-minimal".data').fetchone()[0]
-    ws_files_after = con.execute("""
-        SELECT data_file
-        FROM ducklake_list_files('ws', 'data', schema => 'test-minimal')
-    """).fetchall()
-    print(f"  Workspace catalog: {ws_count} rows, {len(ws_files_after)} file(s)")
-    con.close()
-
-    # ── Step 6: Incremental merge (only new files)
-    step("Step 6: Incremental merge into global catalog")
-
-    con = duckdb.connect()
-    con.execute("INSTALL ducklake; LOAD ducklake;")
-
-    con.execute(f"ATTACH 'ducklake:{ws_catalog}' AS ws (READ_ONLY)")
     con.execute(f"""
         ATTACH 'ducklake:{global_catalog}' AS global_cat (
             DATA_PATH '{data_dir}/'
         )
     """)
 
-    ws_files = con.execute("""
-        SELECT data_file
-        FROM ducklake_list_files('ws', 'data', schema => 'test-minimal')
-    """).fetchall()
+    # Simulate incremental merge: scan files, diff, register new
+    registered = set(r[0] for r in con.execute("""
+        SELECT data_file FROM ducklake_list_files('global_cat', 'data', schema => 'test-minimal')
+    """).fetchall())
 
-    global_files = con.execute("""
-        SELECT data_file
-        FROM ducklake_list_files('global_cat', 'data', schema => 'test-minimal')
-    """).fetchall()
-
-    global_set = {f[0] for f in global_files}
-    new_files = [f[0] for f in ws_files if f[0] not in global_set]
-    print(f"  Workspace files: {len(ws_files)}, Global files: {len(global_files)}, New: {len(new_files)}")
+    all_files = [batch1_path, batch2_path]
+    new_files = [f for f in all_files if f not in registered]
+    print(f"  Registered: {len(registered)}, On disk: {len(all_files)}, New: {len(new_files)}")
 
     for file_path in new_files:
         con.execute(f"""
@@ -249,20 +140,112 @@ def main():
         """)
     print(f"  Registered {len(new_files)} new file(s)")
 
-    # Verify final state
-    final_count = con.execute("""
-        SELECT COUNT(*) FROM global_cat."test-minimal".data
-    """).fetchone()[0]
-    print(f"  Global catalog final row count: {final_count}")
+    count = con.execute('SELECT COUNT(*) FROM global_cat."test-minimal".data').fetchone()[0]
+    print(f"  Global catalog: {count} rows")
 
-    if final_count != 150:
-        print(f"  FAIL: Expected 150 rows, got {final_count}")
+    if count != 150:
+        print(f"  FAIL: Expected 150 rows, got {count}")
         errors += 1
     else:
-        print(f"  PASS: Incremental merge correct")
+        print(f"  PASS: Incremental append correct")
 
-    # ── Step 7: Query the global catalog (simulates end-user access)
-    step("Step 7: Query global catalog")
+    con.close()
+
+    # ── Step 4: Replace mode test
+    step("Step 4: Replace mode (drop old, keep latest)")
+
+    con = duckdb.connect()
+    batch3_path = os.path.join(data_dir, "batch3.parquet")
+    con.execute(f"""
+        COPY (
+            SELECT i AS id, 'replaced_' || i AS name,
+                   39.0 + random()*0.01 AS lat,
+                   -120.0 + random()*0.01 AS lon
+            FROM range(75) t(i)
+        ) TO '{batch3_path}' (FORMAT PARQUET)
+    """)
+    print(f"  Wrote {batch3_path} (replace-mode data)")
+    con.close()
+
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"""
+        ATTACH 'ducklake:{global_catalog}' AS global_cat (
+            DATA_PATH '{data_dir}/'
+        )
+    """)
+
+    # Simulate replace mode: get latest file, drop + recreate, register only latest
+    cols = con.execute("""
+        SELECT column_name, data_type FROM information_schema.columns
+        WHERE table_catalog = 'global_cat' AND table_schema = 'test-minimal' AND table_name = 'data'
+    """).fetchall()
+    col_defs = ", ".join(f'"{name}" {dtype}' for name, dtype in cols)
+
+    con.execute('DROP TABLE global_cat."test-minimal".data')
+    con.execute(f'CREATE TABLE global_cat."test-minimal".data ({col_defs})')
+    print(f"  Dropped and recreated table (replace mode)")
+
+    con.execute(f"""
+        CALL ducklake_add_data_files('global_cat', 'data', '{batch3_path}',
+            schema => 'test-minimal',
+            allow_missing => true,
+            ignore_extra_columns => true
+        )
+    """)
+
+    count = con.execute('SELECT COUNT(*) FROM global_cat."test-minimal".data').fetchone()[0]
+    files = con.execute("""
+        SELECT data_file FROM ducklake_list_files('global_cat', 'data', schema => 'test-minimal')
+    """).fetchall()
+    print(f"  Global catalog: {count} rows, {len(files)} file(s)")
+
+    if count != 75:
+        print(f"  FAIL: Expected 75 rows, got {count}")
+        errors += 1
+    elif len(files) != 1:
+        print(f"  FAIL: Expected 1 file, got {len(files)}")
+        errors += 1
+    else:
+        print(f"  PASS: Replace mode correct (1 file, 75 rows)")
+
+    con.close()
+
+    # ── Step 5: CHECKPOINT (compaction is now safe, single catalog owns all files)
+    step("Step 5: Run CHECKPOINT (compaction safe, sole file owner)")
+
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"""
+        ATTACH 'ducklake:{global_catalog}' AS global_cat (
+            DATA_PATH '{data_dir}/'
+        )
+    """)
+
+    try:
+        con.execute("USE global_cat")
+        con.execute("CHECKPOINT")
+        print("  PASS: CHECKPOINT completed (compaction enabled)")
+    except duckdb.Error as e:
+        print(f"  FAIL: CHECKPOINT failed: {e}")
+        errors += 1
+
+    # Verify data survived compaction
+    count = con.execute('SELECT COUNT(*) FROM global_cat."test-minimal".data').fetchone()[0]
+    if count != 75:
+        print(f"  FAIL: Post-CHECKPOINT count is {count}, expected 75")
+        errors += 1
+    else:
+        print(f"  PASS: Data intact after CHECKPOINT ({count} rows)")
+
+    con.close()
+
+    # ── Step 6: Query the global catalog
+    step("Step 6: Query global catalog")
+
+    con = duckdb.connect()
+    con.execute("INSTALL ducklake; LOAD ducklake;")
+    con.execute(f"ATTACH 'ducklake:{global_catalog}' AS global_cat (READ_ONLY)")
 
     sample = con.execute("""
         SELECT id, name, round(lat, 4) AS lat, round(lon, 4) AS lon
@@ -283,48 +266,18 @@ def main():
     """).fetchone()
     print(f"  Stats: total={stats[0]}, unique_ids={stats[1]}, lat=[{stats[2]}, {stats[3]}]")
 
-    if stats[1] != 150:
-        print(f"  FAIL: Expected 150 unique IDs, got {stats[1]}")
+    if stats[1] != 75:
+        print(f"  FAIL: Expected 75 unique IDs, got {stats[1]}")
         errors += 1
     else:
-        print(f"  PASS: All IDs unique across batches")
+        print(f"  PASS: All IDs unique after replace")
 
-    # ── Step 8: Test CHECKPOINT (maintenance on workspace, not global)
-    step("Step 8: Run CHECKPOINT on workspace catalog")
-
-    # CHECKPOINT must run on workspace catalogs, never on the global catalog.
-    # Global catalog has auto_compact=false, but CHECKPOINT still runs
-    # expire_snapshots + cleanup_old_files which could delete shared files.
-    # Production maintenance.py also sets auto_compact=false on workspace
-    # catalogs to protect files shared with the global catalog.
-    con.execute("DETACH global_cat")
-    con.execute("DETACH ws")
-
-    con2 = duckdb.connect()
-    con2.execute("INSTALL ducklake; LOAD ducklake;")
-    con2.execute(f"""
-        ATTACH 'ducklake:{ws_catalog}' AS ws (
-            DATA_PATH '{data_dir}/'
-        )
-    """)
-    con2.execute("CALL ws.set_option('auto_compact', false)")
-
-    try:
-        con2.execute("USE ws")
-        con2.execute("CHECKPOINT")
-        print("  PASS: CHECKPOINT completed (auto_compact=false)")
-    except duckdb.Error as e:
-        print(f"  FAIL: CHECKPOINT failed: {e}")
-        errors += 1
-
-    con2.close()
     con.close()
 
     # ── Summary
     step("Summary")
-    print(f"  Workspace catalog: {ws_catalog}")
-    print(f"  Global catalog:    {global_catalog}")
-    print(f"  Data directory:    {data_dir}")
+    print(f"  Global catalog: {global_catalog}")
+    print(f"  Data directory:  {data_dir}")
 
     if errors == 0:
         print(f"\n  ALL TESTS PASSED")

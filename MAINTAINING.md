@@ -6,42 +6,31 @@ Full architecture: `research/architecture.md`
 
 ## DuckLake Federation
 
-- One DuckDB catalog per workspace on S3 (`s3://{bucket}/{owner}/{repo}/{branch}/.catalogs/{name}.duckdb`)
-- One global catalog (`s3://{bucket}/{owner}/{repo}/{branch}/catalog.duckdb`) assembled by merge queue
-- Zero-copy: global catalog stores pointers to workspace Parquet files via `ducklake_add_data_files()`
-- No PostgreSQL. DuckDB backend works because only one process writes to each catalog at a time
+- One global catalog (`s3://{bucket}/{owner}/{repo}/{branch}/catalog.duckdb`) is the single source of truth
+- The merge script scans S3 for Parquet files and registers them directly in the global catalog via `ducklake_add_data_files()`
+- No PostgreSQL. DuckDB backend works because only one process writes at a time (concurrency group)
 
 **CRITICAL: DuckDB catalog backend, NOT SQLite.** Catalog files use `.duckdb` extension (DuckDB backend), not `.ducklake` (SQLite backend). DuckDB catalogs support remote S3/HTTPS read-only access via httpfs, enabling `ATTACH 'ducklake:s3://bucket/{owner}/{repo}/{branch}/catalog.duckdb' AS cat (READ_ONLY)` without downloading. SQLite catalogs do NOT support remote access (blocked by duckdb/ducklake#912).
 
 ### Catalog Merge Flow (serial, concurrency: 1)
 
-For each workspace, the merge script (`merge_catalog.py`) runs two phases:
+For each workspace, the merge script (`merge_catalog.py`):
 
-**Phase 1 - Sync workspace catalog:**
-1. Downloads workspace catalog from S3 (or creates a new one)
-2. For each table declared in the workspace pixi.toml, scans S3 for Parquet files under `s3://bucket/{owner}/{repo}/{branch}/{schema}/{table}/*.parquet`
-3. Registers any files not yet tracked in the workspace catalog via `ducklake_add_data_files()`
-4. Uploads the updated workspace catalog back to S3
-
-**Phase 2 - Merge to global:**
-1. Downloads global catalog from S3 (or creates a new one)
-2. Diffs `ducklake_list_files()` between workspace and global for each table
-3. Registers only NEW files in the global catalog (zero-copy, metadata only)
-4. Uploads the updated global catalog to S3
+1. Downloads the global catalog from S3 (or creates a new one)
+2. Scans S3 for Parquet files under `s3://bucket/{owner}/{repo}/{branch}/{schema}/{table}/*.parquet`
+3. Diffs scanned files against `ducklake_list_files()` in the global catalog
+4. Registers new files (mode-dependent):
+   - **append**: registers all unregistered files
+   - **replace**: drops old registrations, keeps only the latest timestamped file
+5. Uploads the updated global catalog to S3
 
 Dedup is mandatory. `ducklake_add_data_files` has no built-in cross-call duplicate detection. Same file registered twice = duplicate rows. The merge script diffs file lists before registering to prevent this.
 
 **Never overwrite a registered file.** `ducklake_add_data_files` caches `file_size_bytes` and `footer_size` at registration time. If a file is later overwritten at the same S3 path (e.g., re-extracted with different data), DuckLake will use stale metadata for range requests, causing HTTP 416 errors. The extract workflow prevents this by uploading each extraction with a timestamped filename (`<timestamp>.parquet`).
 
-### Compaction Safety
+### Compaction
 
-Global catalog must NOT run compaction. It would DELETE workspace Parquet files and replace them with copies in the global DATA_PATH.
-
-```sql
-CALL global.set_option('auto_compact', false);
-```
-
-Run compaction only on individual workspace catalogs (which own their data paths). Weekly maintenance (`maintenance.py`) handles this automatically via CHECKPOINT with `expire_older_than = 30 days` and `delete_older_than = 7 days`.
+The global catalog is the sole owner of all data files, so compaction is safe. Weekly maintenance (`maintenance.py`) runs CHECKPOINT with `expire_older_than = 30 days` and `delete_older_than = 7 days`.
 
 ## S3 Layout
 
@@ -52,10 +41,7 @@ s3://registry/
     walkthru-earth/               # GitHub repo owner
         ai-data-registry/         # GitHub repo name
             main/                 # Git branch name
-                .catalogs/        # DuckLake catalogs (DuckDB backend)
-                    weather.duckdb
-                    opensky-flights.duckdb
-                catalog.duckdb    # Global (merge-queue-owned)
+                catalog.duckdb    # Global catalog (single source of truth)
                 weather/          # Workspace data prefix (= schema)
                     observations/ # Table subdirectory
                         20260401T060000Z.parquet
@@ -68,7 +54,6 @@ s3://registry/
             pr/                   # PR staging (no branch, keyed on PR number)
                 42/
                     weather/...
-                42.duckdb         # PR-scoped catalog (optional)
 ```
 
 **Rule:** `schema` in pixi.toml = S3 prefix = workspace write boundary.
@@ -141,9 +126,9 @@ storage = ["eu-hetzner", "us-east"]     # replicate to multiple storages
 | `extract-github.yml` | Scheduler dispatch or `workflow_dispatch` | Runs workspace on free GitHub runner |
 | `extract-hetzner.yml` | Scheduler dispatch or `workflow_dispatch` | Create-run-delete ephemeral Hetzner ARM server |
 | `extract-huggingface.yml` | Scheduler dispatch or `workflow_dispatch` | Submit to HF Jobs API (GPU/Docker) |
-| `merge-catalog.yml` | `workflow_run` (extract success) + cron (every 10 min) + `workflow_dispatch` | Merges all pending workspace catalogs into global (`--all` mode) |
+| `merge-catalog.yml` | `workflow_run` (extract success) + cron (every 10 min) + `workflow_dispatch` | Scans S3, registers new files in global catalog (`--all` mode) |
 | `scheduler.yml` | Cron (every 15 min) or `workflow_dispatch` | Reads schedules, dispatches due workspaces by backend |
-| `maintenance.yml` | Cron (Sunday 3 AM UTC) or `workflow_dispatch` | Weekly CHECKPOINT on workspace catalogs |
+| `maintenance.yml` | Cron (Sunday 3 AM UTC) or `workflow_dispatch` | Weekly CHECKPOINT on global catalog |
 | `build-image.yml` | Push to main with Dockerfile changes | Build + push Docker image to GHCR for HF workspaces |
 | `template-setup.yml` | One-time template init | Replaces placeholders, deletes itself |
 
@@ -162,12 +147,12 @@ uv run .github/scripts/<script>.py
 | `check_collisions.py` | Layer 2: `schema.table` uniqueness across all workspaces | `pr-validate.yml` |
 | `check_catalog.py` | Layer 3: downloads global catalog from S3, checks table existence and schema compatibility. Gracefully skips when S3 creds unavailable (fork PRs) | `pr-validate.yml` |
 | `validate_output.py` | Layer 4: validates Parquet output (min rows, max null pct, unique cols, gpio geometry check) | `pr-validate.yml`, `pr-extract.yml` |
-| `upload_output.py` | Consolidated upload script: reads workspace storage targets, uploads parquet files to all declared storages with owner/repo/branch prefix via s5cmd. Replaces inline upload shell code in extract workflows | `extract-github.yml`, `extract-hetzner.yml` |
-| `merge_catalog.py` | Two-phase merge per storage target: (1) scans S3 for unregistered files per table, syncs workspace catalog; (2) diffs workspace vs global, registers new files. `--all` mode discovers all workspaces, groups by storage, downloads/uploads global catalog once per storage. `--workspace` mode for single workspace. `--storage` flag for single-storage merge. Sets `auto_compact = false` on global | `merge-catalog.yml` |
+| `upload_output.py` | Uploads parquet files to all declared storages with owner/repo/branch prefix via s5cmd | `extract-github.yml`, `extract-hetzner.yml` |
+| `merge_catalog.py` | Scans S3 for Parquet files, diffs against global catalog, registers new files. Supports append and replace modes. `--all` mode groups by storage, downloads/uploads global catalog once per storage. `--workspace` mode for single workspace. `--storage` flag for single-storage merge | `merge-catalog.yml` |
 | `find_due.py` | Evaluates workspace cron schedules against state file (workflow artifact), dispatches backend workflows. Builds per-backend inputs (workspace, server_type/flavor/image). `--dry-run` and `--state-file` flags | `scheduler.yml` |
-| `maintenance.py` | Lists all workspace catalogs from S3, runs CHECKPOINT with `expire_older_than = 30 days`, `delete_older_than = 7 days`, cleans orphaned files. `--dry-run` flag | `maintenance.yml` |
+| `maintenance.py` | Downloads global catalog, runs CHECKPOINT with compaction (`expire_older_than = 30 days`, `delete_older_than = 7 days`). `--dry-run` and `--storage` flags | `maintenance.yml` |
 | `submit_hf_job.py` | Submits container job to HF Jobs API via `huggingface_hub.run_job()`, passes S3 creds + workspace secrets, polls status every 30s (max 2h timeout) | `extract-huggingface.yml` |
-| `test_local_merge.py` | Local DuckLake merge test (no S3 needed). Simulates batch generation, catalog creation, incremental merge, and CHECKPOINT. Run: `uv run .github/scripts/test_local_merge.py` | Development |
+| `test_local_merge.py` | Local DuckLake merge test (no S3 needed). Tests append mode, replace mode, compaction, and CHECKPOINT. Run: `uv run .github/scripts/test_local_merge.py` | Development |
 
 ## Security
 

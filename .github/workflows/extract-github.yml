@@ -34,31 +34,9 @@ jobs:
           cache: true
           cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
 
-      - name: Pull workspace catalog from S3 (default storage)
-        env:
-          S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
-          WORKSPACE: ${{ inputs.workspace }}
-          RUNNER_TEMP: ${{ runner.temp }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          CATALOG_PATH="${RUNNER_TEMP}/${WORKSPACE}.duckdb"
-          PREFIX=""
-          [ -n "$REPO_OWNER" ] && [ -n "$REPO_NAME" ] && PREFIX="${REPO_OWNER}/${REPO_NAME}/"
-          [ -n "$BRANCH" ] && PREFIX="${PREFIX}${BRANCH}/"
-          pixi run s5cmd --endpoint-url "$S3_ENDPOINT_URL" \
-            cp "s3://${S3_BUCKET}/${PREFIX}.catalogs/${WORKSPACE}.duckdb" \
-            "$CATALOG_PATH" 2>/dev/null || echo "No existing catalog found (first run)."
-          echo "CATALOG_PATH=$CATALOG_PATH" >> "$GITHUB_ENV"
-
       - name: Run pipeline
         env:
           OUTPUT_DIR: ${{ runner.temp }}/output
-          CATALOG_PATH: ${{ env.CATALOG_PATH }}
           WORKSPACE_SECRET_API_KEY: ${{ secrets[format('WS_{0}_API_KEY', inputs.workspace)] }}
           WORKSPACE: ${{ inputs.workspace }}
         run: |
@@ -80,11 +58,7 @@ jobs:
           RUNNER_TEMP: ${{ runner.temp }}
         run: |
           TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
-          CATALOG_PATH="${RUNNER_TEMP}/${WORKSPACE}.duckdb"
-          CATALOG_ARG=""
-          [ -f "$CATALOG_PATH" ] && CATALOG_ARG="--catalog $CATALOG_PATH"
           uv run .github/scripts/upload_output.py \
             --workspace "$WORKSPACE" \
             --output-dir "${RUNNER_TEMP}/output" \
-            --timestamp "$TIMESTAMP" \
-            $CATALOG_ARG
+            --timestamp "$TIMESTAMP"

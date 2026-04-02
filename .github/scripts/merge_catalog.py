@@ -4,7 +4,7 @@
 #   "duckdb>=1.5.1",
 # ]
 # ///
-"""Merge workspace catalogs into the global DuckLake catalog.
+"""Merge workspace data into the global DuckLake catalog.
 
 Usage:
     uv run merge_catalog.py --workspace <name> [--catalog-dir <path>] [--storage <name>]
@@ -12,13 +12,10 @@ Usage:
 
 For each table declared in the workspace pixi.toml:
   1. Scans S3 for Parquet files under s3://bucket/{owner}/{repo}/{branch}/{schema}/{table}/
-  2. Registers files in the workspace catalog (mode-dependent):
+  2. Diffs S3 files against the global catalog
+  3. Registers new files in the global catalog (mode-dependent):
      - append: registers all unregistered files
      - replace: drops old registrations, keeps only the latest file
-  3. Diffs the workspace catalog against the global catalog
-  4. Syncs the global catalog (mode-dependent):
-     - append: registers only NEW files (zero-copy)
-     - replace: drops old files, re-registers from workspace catalog
 
 Modes:
   --workspace <name>  Merge a single workspace (backward compatible)
@@ -54,7 +51,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scripts.registry_config import (
     WORKSPACE_NAME_RE,
     WORKSPACES_DIR,
-    build_catalog_path,
     build_global_catalog_path,
     build_s3_root,
     discover_workspaces,
@@ -149,10 +145,10 @@ def _recreate_table(con, catalog: str, schema: str, table: str, col_defs: str):
     con.execute(f'CREATE TABLE {catalog}.{quote_ident(schema)}.{quote_ident(table)} ({col_defs})')
 
 
-def sync_workspace_table(con, data_path: str, schema: str, table: str, mode: str = "append") -> int:
-    """Register any S3 files not yet tracked by the workspace catalog.
+def merge_table(con, data_path: str, schema: str, table: str, mode: str = "append") -> int:
+    """Scan S3 for files and register them in the global catalog.
 
-    For mode=replace, only the latest file is kept in the catalog.
+    For mode=replace, only the latest file is kept.
     For mode=append, all unregistered files are added.
 
     Returns the number of newly registered files.
@@ -162,24 +158,21 @@ def sync_workspace_table(con, data_path: str, schema: str, table: str, mode: str
         print(f"  No S3 files found for {schema}.{table}")
         return 0
 
-    # Check if table exists in workspace catalog
+    # Ensure table exists in global catalog
     table_exists = True
     try:
-        con.execute(f'SELECT 1 FROM ws.{quote_ident(schema)}.{quote_ident(table)} LIMIT 0')
+        con.execute(f'SELECT 1 FROM global_cat.{quote_ident(schema)}.{quote_ident(table)} LIMIT 0')
     except Exception:
         table_exists = False
-
-    if not table_exists:
-        # Create table from the first readable file's schema
-        con.execute(f'CREATE SCHEMA IF NOT EXISTS ws.{quote_ident(schema)}')
+        print(f"  Creating {schema}.{table} in global catalog...")
+        con.execute(f'CREATE SCHEMA IF NOT EXISTS global_cat.{quote_ident(schema)}')
         created = False
         for candidate in sorted(s3_files, reverse=True):
             try:
                 con.execute(f"""
-                    CREATE TABLE ws.{quote_ident(schema)}.{quote_ident(table)} AS
+                    CREATE TABLE global_cat.{quote_ident(schema)}.{quote_ident(table)} AS
                     SELECT * FROM read_parquet({quote_literal(candidate)}) LIMIT 0
                 """)
-                print(f"  Created table {schema}.{table} in workspace catalog")
                 created = True
                 break
             except Exception as e:
@@ -188,7 +181,7 @@ def sync_workspace_table(con, data_path: str, schema: str, table: str, mode: str
             print(f"  ERROR: No readable files for {schema}.{table}, skipping")
             return 0
 
-    registered = list_registered_files(con, "ws", schema, table)
+    registered = list_registered_files(con, "global_cat", schema, table)
 
     # --- Replace mode: keep only the latest file ---
     if mode == "replace":
@@ -205,14 +198,14 @@ def sync_workspace_table(con, data_path: str, schema: str, table: str, mode: str
 
         # Drop and recreate to clear old file registrations
         if table_exists and registered:
-            cols = _get_table_columns(con, "ws", schema, table)
+            cols = _get_table_columns(con, "global_cat", schema, table)
             col_defs = ", ".join(f'{quote_ident(name)} {dtype}' for name, dtype in cols)
-            _recreate_table(con, "ws", schema, table, col_defs)
+            _recreate_table(con, "global_cat", schema, table, col_defs)
             print(f"  {schema}.{table}: replace mode, cleared {len(registered)} old file(s)")
 
         try:
             con.execute(f"""
-                CALL ducklake_add_data_files('ws', {quote_literal(table)}, {quote_literal(latest_file)},
+                CALL ducklake_add_data_files('global_cat', {quote_literal(table)}, {quote_literal(latest_file)},
                     schema => {quote_literal(schema)},
                     allow_missing => true,
                     ignore_extra_columns => true
@@ -222,12 +215,11 @@ def sync_workspace_table(con, data_path: str, schema: str, table: str, mode: str
             print(f"  WARNING: Failed to register {latest_file}: {e}")
             return 0
 
-        total = con.execute(f'SELECT COUNT(*) FROM ws.{quote_ident(schema)}.{quote_ident(table)}').fetchone()[0]
+        total = con.execute(f'SELECT COUNT(*) FROM global_cat.{quote_ident(schema)}.{quote_ident(table)}').fetchone()[0]
         print(f"  {schema}.{table}: replace mode, registered latest file ({total} rows)")
         return 1
 
     # --- Append mode (default): register all unregistered files ---
-    # Normalize S3 paths to relative (strip data_path prefix) for comparison
     new_files = []
     for full_path in s3_files:
         rel_path = full_path.removeprefix(data_path) if full_path.startswith(data_path) else full_path
@@ -242,91 +234,6 @@ def sync_workspace_table(con, data_path: str, schema: str, table: str, mode: str
     for file_path in new_files:
         try:
             con.execute(f"""
-                CALL ducklake_add_data_files('ws', {quote_literal(table)}, {quote_literal(file_path)},
-                    schema => {quote_literal(schema)},
-                    allow_missing => true,
-                    ignore_extra_columns => true
-                )
-            """)
-            count += 1
-        except Exception as e:
-            print(f"  WARNING: Failed to register {file_path} in workspace catalog: {e}")
-
-    total = con.execute(f'SELECT COUNT(*) FROM ws.{quote_ident(schema)}.{quote_ident(table)}').fetchone()[0]
-    print(f"  {schema}.{table}: registered {count} new file(s), {total} total rows")
-    return count
-
-
-def merge_table_to_global(con, schema: str, table: str, mode: str = "append") -> int:
-    """Copy newly registered files from workspace catalog to global catalog.
-
-    For mode=replace, the global table is cleared and rebuilt from workspace files.
-    For mode=append, only new files are added.
-
-    Returns the number of files registered in the global catalog.
-    """
-    ws_files = list_registered_files(con, "ws", schema, table)
-    if not ws_files:
-        print(f"  {schema}.{table}: no files in workspace catalog, skipping")
-        return 0
-
-    # Ensure table exists in global catalog
-    global_table_exists = True
-    try:
-        con.execute(f'SELECT 1 FROM global_cat.{quote_ident(schema)}.{quote_ident(table)} LIMIT 0')
-    except Exception:
-        global_table_exists = False
-        print(f"  Creating {schema}.{table} in global catalog...")
-        con.execute(f'CREATE SCHEMA IF NOT EXISTS global_cat.{quote_ident(schema)}')
-        cols = _get_table_columns(con, "ws", schema, table)
-        if not cols:
-            print(f"  WARNING: Table {schema}.{table} has no columns in workspace catalog, skipping")
-            return 0
-        col_defs = ", ".join(f'{quote_ident(name)} {dtype}' for name, dtype in cols)
-        con.execute(f'CREATE TABLE global_cat.{quote_ident(schema)}.{quote_ident(table)} ({col_defs})')
-
-    global_files = list_registered_files(con, "global_cat", schema, table)
-
-    # --- Replace mode: ensure global has exactly the same files as workspace ---
-    if mode == "replace" and global_table_exists:
-        if ws_files == global_files:
-            print(f"  {schema}.{table}: replace mode, global catalog up to date")
-            return 0
-
-        # Clear global table and re-register workspace files
-        cols = _get_table_columns(con, "global_cat", schema, table)
-        col_defs = ", ".join(f'{quote_ident(name)} {dtype}' for name, dtype in cols)
-        _recreate_table(con, "global_cat", schema, table, col_defs)
-        print(f"  {schema}.{table}: replace mode, cleared {len(global_files)} old file(s) from global")
-
-        count = 0
-        for file_path in sorted(ws_files):
-            try:
-                con.execute(f"""
-                    CALL ducklake_add_data_files('global_cat', {quote_literal(table)}, {quote_literal(file_path)},
-                        schema => {quote_literal(schema)},
-                        allow_missing => true,
-                        ignore_extra_columns => true
-                    )
-                """)
-                count += 1
-            except Exception as e:
-                print(f"  WARNING: Failed to register {file_path} in global catalog: {e}")
-        print(f"  {schema}.{table}: replace mode, registered {count} file(s) in global catalog")
-        return count
-
-    # --- Append mode (default): register only new files ---
-    new_files = ws_files - global_files
-
-    if not new_files:
-        print(f"  {schema}.{table}: global catalog up to date")
-        return 0
-
-    print(f"  {schema}.{table}: registering {len(new_files)} new file(s) in global catalog...")
-    count = 0
-    for file_path in sorted(new_files):
-        try:
-            con.execute(f"""
                 CALL ducklake_add_data_files('global_cat', {quote_literal(table)}, {quote_literal(file_path)},
                     schema => {quote_literal(schema)},
                     allow_missing => true,
@@ -337,6 +244,8 @@ def merge_table_to_global(con, schema: str, table: str, mode: str = "append") ->
         except Exception as e:
             print(f"  WARNING: Failed to register {file_path} in global catalog: {e}")
 
+    total = con.execute(f'SELECT COUNT(*) FROM global_cat.{quote_ident(schema)}.{quote_ident(table)}').fetchone()[0]
+    print(f"  {schema}.{table}: registered {count} new file(s), {total} total rows")
     return count
 
 
@@ -351,7 +260,7 @@ def merge_workspace_storage(
     global_catalog_local: str | None = None,
     skip_global_upload: bool = False,
 ) -> tuple[bool, bool]:
-    """Merge a workspace's catalog for a single storage target.
+    """Merge a workspace's S3 data into the global catalog for a single storage target.
 
     Args:
         global_catalog_local: Pre-downloaded global catalog path. If provided,
@@ -365,15 +274,12 @@ def merge_workspace_storage(
     """
     print(f"\n=== Storage: {storage_name} ===")
 
-    # S3 paths using path builders
-    ws_catalog_s3 = build_catalog_path(storage_name, workspace)
     global_catalog_s3 = build_global_catalog_path(storage_name)
     data_path = build_s3_root(storage_name)
 
     # Use storage-specific subdirectory to avoid conflicts between storages
     storage_catalog_dir = os.path.join(catalog_dir, storage_name)
     os.makedirs(storage_catalog_dir, exist_ok=True)
-    ws_catalog_local = os.path.join(storage_catalog_dir, f"{workspace}.duckdb")
     _global_catalog_local = global_catalog_local or os.path.join(storage_catalog_dir, "catalog.duckdb")
 
     # Setup DuckDB
@@ -389,50 +295,13 @@ def merge_workspace_storage(
 
     create_s3_secret(con, storage_name)
 
-    # Download workspace catalog
-    print(f"Downloading workspace catalog: {ws_catalog_s3}")
-    if not download_catalog(storage_name, ws_catalog_s3, ws_catalog_local):
-        print(f"  INFO: No workspace catalog found. Will create a new one.")
-
     # Download global catalog (skip if caller provided a pre-downloaded one)
     if global_catalog_local is None:
         print(f"Downloading global catalog: {global_catalog_s3}")
         if not download_catalog(storage_name, global_catalog_s3, _global_catalog_local):
             print(f"  INFO: No global catalog found. Will create a new one.")
 
-    # -- Phase 1: Sync workspace catalog --
-    # Attach workspace catalog READ_WRITE so we can register new S3 files.
-    try:
-        con.execute(f"""
-            ATTACH {quote_literal('ducklake:' + ws_catalog_local)} AS ws (
-                DATA_PATH {quote_literal(data_path)}
-            )
-        """)
-    except duckdb.Error as e:
-        print(f"  ERROR: Failed to attach workspace catalog: {e}")
-        con.close()
-        return False, False
-
-    ws_changed = False
-    for table in tables:
-        newly_registered = sync_workspace_table(con, data_path, schema, table, mode)
-        if newly_registered > 0:
-            ws_changed = True
-
-    # Upload workspace catalog if it changed
-    if ws_changed:
-        con.execute("DETACH ws")
-        print(f"Uploading workspace catalog: {ws_catalog_s3}")
-        if not upload_catalog(storage_name, ws_catalog_local, ws_catalog_s3):
-            print(f"  WARNING: Failed to upload workspace catalog.")
-        # Re-attach as read-only for the merge step
-        con.execute(f"ATTACH {quote_literal('ducklake:' + ws_catalog_local)} AS ws (READ_ONLY)")
-    else:
-        # Switch to read-only for the merge step
-        con.execute("DETACH ws")
-        con.execute(f"ATTACH {quote_literal('ducklake:' + ws_catalog_local)} AS ws (READ_ONLY)")
-
-    # -- Phase 2: Merge to global catalog --
+    # Attach global catalog
     try:
         con.execute(f"""
             ATTACH {quote_literal('ducklake:' + _global_catalog_local)} AS global_cat (
@@ -444,15 +313,9 @@ def merge_workspace_storage(
         con.close()
         return False, False
 
-    # Disable auto_compact on global catalog to prevent file deletion
-    try:
-        con.execute("CALL global_cat.set_option('auto_compact', false)")
-    except duckdb.Error:
-        pass
-
     global_changed = False
     for table in tables:
-        newly_merged = merge_table_to_global(con, schema, table, mode)
+        newly_merged = merge_table(con, data_path, schema, table, mode)
         if newly_merged > 0:
             global_changed = True
 
@@ -474,7 +337,7 @@ def merge_workspace_storage(
 
 
 def merge_workspace(workspace: str, catalog_dir: str, storage_name: str | None = None) -> bool:
-    """Merge a workspace's catalog into the global catalog for one or all storages."""
+    """Merge a workspace's data into the global catalog for one or all storages."""
     # Parse workspace config
     ws_pixi = WORKSPACES_DIR / workspace / "pixi.toml"
     registry = parse_workspace_registry(ws_pixi)
@@ -587,7 +450,7 @@ def merge_all_workspaces(catalog_dir: str, storage_filter: str | None = None) ->
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Merge workspace catalog into global catalog")
+    parser = argparse.ArgumentParser(description="Merge workspace data into global catalog")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--workspace", help="Workspace name to merge")
     group.add_argument("--all", action="store_true", dest="merge_all", help="Merge all workspaces (grouped by storage)")

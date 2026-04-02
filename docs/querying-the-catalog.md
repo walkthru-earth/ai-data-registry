@@ -265,21 +265,6 @@ SELECT
     (SELECT COUNT(*) FROM catalog."<schema>"."<table>") AS rows;
 ```
 
-### Workspace catalog vs global consistency
-
-Attach a workspace catalog alongside the global to compare:
-
-```sql
--- Path: s3://{bucket}/{owner}/{repo}/{branch}/.catalogs/{workspace}.duckdb
-ATTACH 'ducklake:s3://<bucket>/<owner>/<repo>/<branch>/.catalogs/<workspace>.duckdb'
-    AS ws (READ_ONLY);
-
--- Files in workspace but not in global (pending merge)
-SELECT data_file FROM ducklake_list_files('ws', '<table>', schema => '<schema>')
-EXCEPT
-SELECT data_file FROM ducklake_list_files('catalog', '<table>', schema => '<schema>');
-```
-
 ## 6. Time travel
 
 DuckLake keeps a snapshot for every write. Query historical state by version or timestamp.
@@ -297,9 +282,7 @@ SELECT COUNT(*) FROM catalog."<schema>"."<table>"
 
 ```
 s3://{bucket}/{owner}/{repo}/{branch}/
-    catalog.duckdb                              -- global catalog
-    .catalogs/
-        {workspace}.duckdb                      -- per-workspace catalog
+    catalog.duckdb                              -- global catalog (single source of truth)
     {schema}/
         {table}/{timestamp}.parquet             -- data files
 ```
