@@ -74,6 +74,8 @@ jobs:
           mkdir -p "$OUTPUT_DIR"
           pixi run -w "$WORKSPACE" pipeline
 
+      - uses: astral-sh/setup-uv@v8
+
       - name: Upload output to all storages
         env:
           S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
