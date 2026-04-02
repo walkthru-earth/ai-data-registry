@@ -31,3 +31,4 @@ data/
 !.env.example
 *.gitignore
 *.gitattributes
+.DS_Store
