@@ -12,15 +12,14 @@ Use `/new-workspace <name> <language>` for guided setup, or manually:
 mkdir -p workspaces/<name>
 cd workspaces/<name>
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
-cd ../..
-pixi workspace register --name <name> --path workspaces/<name>
-rm workspaces/<name>/pixi.lock   # root lock covers all
 
-pixi add -w <name> python        # or go, nodejs, rust, etc.
-pixi add -w <name> <other-deps>
+pixi add python                  # or go, nodejs, rust, etc.
+pixi add <other-deps>
+pixi add --pypi <pypi-dep>       # PyPI fallback only
+cd ../..
 ```
 
-**Registration is machine-local** (`~/.pixi/workspaces.toml`, not committed). Each developer must run `pixi workspace register` after cloning. CI does this automatically.
+Each workspace is a standalone pixi project with its own `pixi.toml` and committed `pixi.lock`. No registration needed.
 
 ## Workspace Contract
 
@@ -106,7 +105,7 @@ dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
 
 - `extract` writes one `<table_name>.parquet` per declared table to `$OUTPUT_DIR/`
 - Do NOT hardcode `OUTPUT_DIR` in pixi task `env` (breaks CI)
-- `pipeline` is the runner entry point: `pixi run -w {name} pipeline`
+- `pipeline` is the runner entry point: `pixi run --manifest-path workspaces/{name}/pixi.toml pipeline`
 - `dry-run` produces sample output for PR validation
 - Chain stops on any non-zero exit
 
@@ -133,8 +132,9 @@ Always prefer conda-forge. Fall back to PyPI only when not available.
 
 ```bash
 pixi search <pkg>                        # check conda-forge first
-pixi add -w <workspace> <pkg>            # conda-forge (default)
-pixi add -w <workspace> --pypi <pkg>     # PyPI fallback only
+cd workspaces/<workspace>
+pixi add <pkg>                           # conda-forge (default)
+pixi add --pypi <pkg>                    # PyPI fallback only
 ```
 
 - Conda packages go in `[dependencies]`, PyPI in `[pypi-dependencies]`
@@ -155,6 +155,6 @@ Your PR goes through automatic checks:
 1. **Static analysis** - required fields, SPDX licenses, cron syntax, naming, backend/flavor, tasks
 2. **Collision detection** - schema.table unique across all workspaces, no S3 prefix overlap
 3. **Live catalog check** - table existence, schema compatibility for appends (skipped on PRs, runs during `/run-extract`)
-4. **Dry run** - `pixi install` + `pixi run -w {name} dry-run` + output validation
+4. **Dry run** - `pixi install` + `pixi run --manifest-path workspaces/{name}/pixi.toml dry-run` + output validation
 
 All 4 must pass before merge. A maintainer may also trigger `/run-extract` for full end-to-end testing against a staging S3 prefix.

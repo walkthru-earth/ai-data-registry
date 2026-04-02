@@ -69,10 +69,7 @@ Or manually:
 mkdir -p workspaces/my-pipeline
 cd workspaces/my-pipeline
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
-cd ../..
-pixi workspace register --name my-pipeline --path workspaces/my-pipeline
-rm workspaces/my-pipeline/pixi.lock
-pixi add -w my-pipeline python
+pixi add python
 ```
 
 Then add your `[tool.registry]` config, write your extract script, and open a PR. See `workspaces/test-minimal/` for a working example.
@@ -150,7 +147,7 @@ flowchart TD
     L3 --> L4
 
     subgraph L4[Layer 4: Dry Run]
-        D["pixi run -w {name} dry-run + output validation"]
+        D["pixi run --manifest-path workspaces/{name}/pixi.toml dry-run + output validation"]
     end
 
     L4 -->|pass| OK[ready to merge]
@@ -173,7 +170,7 @@ Staging data is auto-cleaned when the PR closes.
 ```mermaid
 flowchart TD
     subgraph Workspace[Workspace Extraction]
-        EX["pixi run -w {name} pipeline"]
+        EX["pixi run --manifest-path workspaces/{name}/pixi.toml pipeline"]
         OUT[Parquet in $OUTPUT_DIR/]
         EX --> OUT
     end
@@ -200,7 +197,7 @@ Workspace code has READ-ONLY S3 access. The workflow handles uploads with write 
 ```
 ai-data-registry/
 ├── pixi.toml                  # Shared tools (GDAL, DuckDB, gpio, s5cmd, pnpm)
-├── pixi.lock                  # Single lock for all workspaces
+├── pixi.lock                  # Root lock for shared tools only
 ├── CLAUDE.md                  # AI instructions (shared core + role router)
 ├── CONTRIBUTING.md            # Contributor guide (workspace creation, contract, PR)
 ├── MAINTAINING.md             # Maintainer guide (CI/CD, DuckLake, infra)
@@ -213,6 +210,7 @@ ai-data-registry/
 ├── workspaces/
 │   └── test-minimal/          # Reference implementation
 │       ├── pixi.toml          # Full [tool.registry] contract example
+│       ├── pixi.lock          # Workspace lock (committed, isolated)
 │       ├── extract.py         # Extraction script (writes to $OUTPUT_DIR)
 │       └── validate_local.py  # Local validation
 ├── research/

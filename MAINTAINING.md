@@ -294,7 +294,6 @@ All merge runs share `concurrency: catalog-merge` so they never overlap. GitHub 
 
 - GDAL version must match libgdal-arrow-parquet version
 - gpio: install via `pixi add --pypi geoparquet-io --pre` (PyPI beta)
-- `pixi workspace register` is machine-local. CI must register explicitly
-- Do NOT add `members` to `[workspace]` in root `pixi.toml` (not valid in pixi v0.66.0)
+- Workspaces are standalone pixi projects (own `pixi.toml` + committed `pixi.lock`). CI uses `--manifest-path` to target them
 - `merge-catalog.yml` triggers automatically via `workflow_run` when any extract completes
 - `build-image.yml` triggers on Dockerfile changes pushed to main

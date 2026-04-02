@@ -14,7 +14,7 @@ If the user's intent is unclear, ask: "Are you contributing a workspace, maintai
 
 ## Core Conventions
 
-- **Package manager:** Pixi. Each workspace has its own `pixi.toml`. Root `pixi.toml` defines shared tools. Single `pixi.lock` at root.
+- **Package manager:** Pixi. Each workspace has its own `pixi.toml` and committed `pixi.lock`. Root `pixi.toml` and `pixi.lock` for shared tools only.
 - **Tool execution:** ALL tools via `pixi run <tool>`. Never run directly.
 - **Channels:** conda-forge only. Fall back to PyPI when unavailable.
 - **GeoParquet** is the standard interchange format. Validate with `pixi run gpio check all`.

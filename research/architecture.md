@@ -65,7 +65,7 @@ graph TB
 Each workspace runner (GitHub, Hetzner, or HF Jobs, depending on `[tool.registry.runner].backend`):
 1. Pulls its workspace catalog from S3 (`s3://{bucket}/{owner}/{repo}/{branch}/.catalogs/{name}.duckdb`)
 2. Attaches it as a DuckLake with `DATA_PATH 's3://{bucket}/{owner}/{repo}/{branch}/'`, `META_JOURNAL_MODE 'WAL'`, `META_BUSY_TIMEOUT 500`
-3. Runs `pixi run -w {name} pipeline` which chains setup → extract → validate (stops on failure)
+3. Runs `pixi run --manifest-path workspaces/{name}/pixi.toml pipeline` which chains setup → extract → validate (stops on failure)
 4. Uploads the updated workspace catalog back to S3
 
 The workspace catalog is the workspace's ground truth. It has its own snapshots, time travel, and schema evolution.
@@ -226,7 +226,7 @@ Key design choices:
 
 ### Task Lifecycle
 
-The runner calls **one command**: `pixi run -w {name} pipeline`. Pixi's `depends-on` chains handle ordering and halt on first failure (non-zero exit). No custom hooks needed.
+The runner calls **one command**: `pixi run --manifest-path workspaces/{name}/pixi.toml pipeline`. Pixi's `depends-on` chains handle ordering and halt on first failure (non-zero exit). No custom hooks needed.
 
 ```
 setup ──→ extract ──→ validate
@@ -276,7 +276,7 @@ sequenceDiagram
     participant S3 as Hetzner S3
 
     WF->>HR: Start with READ-ONLY S3 creds
-    HR->>HR: pixi run -w weather extract<br/>(writes to local $OUTPUT_DIR)
+    HR->>HR: pixi run --manifest-path workspaces/weather/pixi.toml extract<br/>(writes to local $OUTPUT_DIR)
     HR->>HR: Validate output<br/>(prefix, gpio, row counts)
     Note over HR: Workflow step (not workspace code)<br/>has S3 WRITE creds
     HR->>S3: upload_output.py<br/>s3://{bucket}/{owner}/{repo}/{branch}/weather/&lt;table&gt;/&lt;ts&gt;.parquet
@@ -318,7 +318,7 @@ flowchart TD
 
     subgraph L4["Layer 4: Dry Run"]
         INSTALL["pixi install"]
-        EXTRACT["pixi run -w {name} dry-run"]
+        EXTRACT["pixi run --manifest-path workspaces/{name}/pixi.toml dry-run"]
         VALIDATE["gpio, nulls, rows, uniqueness"]
     end
 
@@ -345,7 +345,7 @@ After the 4-layer validation passes, a maintainer can trigger a **full extractio
 
 **Flow:**
 1. `pr-extract.yml` checks permissions, parses workspace names from the comment (or auto-detects from PR diff)
-2. Checks out the PR branch, runs `pixi run -w {name} pipeline` (full extraction, not dry-run)
+2. Checks out the PR branch, runs `pixi run --manifest-path workspaces/{name}/pixi.toml pipeline` (full extraction, not dry-run)
 3. Uploads Parquet output to `s3://bucket/{owner}/{repo}/pr/{pr_number}/{workspace}/` (staging prefix)
 4. Runs output validation (row counts, nulls, geometry)
 5. Posts a PR comment with DuckDB query examples to inspect the staged data
@@ -499,7 +499,7 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}/output
           WORKSPACE_SECRET_API_KEY: ${{ secrets[format('WS_{0}_API_KEY', inputs.workspace)] }}
           WORKSPACE: ${{ inputs.workspace }}
-        run: pixi run -w "$WORKSPACE" pipeline
+        run: pixi run --manifest-path "workspaces/$WORKSPACE/pixi.toml" pipeline
 
       - name: Upload output to all storages
         env:
@@ -575,7 +575,7 @@ jobs:
           OUTPUT_DIR: ${{ runner.temp }}/output
           WORKSPACE_SECRET_API_KEY: ${{ secrets[format('WS_{0}_API_KEY', inputs.workspace)] }}
           WORKSPACE: ${{ inputs.workspace }}
-        run: pixi run -w "$WORKSPACE" pipeline
+        run: pixi run --manifest-path "workspaces/$WORKSPACE/pixi.toml" pipeline
 
       - name: Upload output to all storages
         env:
@@ -677,7 +677,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
           WORKSPACE: ${{ inputs.workspace }}
-        run: pixi run -w "$WORKSPACE" pipeline
+        run: pixi run --manifest-path "workspaces/$WORKSPACE/pixi.toml" pipeline
 ```
 
 **Security note:** The HF backend passes S3 write credentials directly to the container, breaking the write-isolation pattern used by GitHub/Hetzner backends. This is an accepted trade-off because HF containers run on external infrastructure without workflow-level upload steps. Mitigate by scoping S3 credentials per workspace if Hetzner adds per-prefix IAM support, or use a proxy that validates write paths.
@@ -747,7 +747,7 @@ Regardless of backend, the pixi task contract is the same. The backend determine
 │  "huggingface" → extract-huggingface.yml (submit to HF Jobs API)     │
 │  unsupported   → rejected (PR validation catches this earlier)        │
 │                                                                      │
-│  All call: pixi run -w {name} pipeline                               │
+│  All call: pixi run --manifest-path workspaces/{name}/pixi.toml pipeline │
 │  Exception: huggingface runs pipeline inside Docker container         │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -764,7 +764,7 @@ Regardless of backend, the pixi task contract is the same. The backend determine
 |---------|--------------|
 | `cache: true` | Caches `.pixi/envs` using `pixi.lock` hash. Skips install on cache hit. |
 | `post-cleanup: true` | Deletes `.pixi`, pixi binary, and rattler cache after job. Prevents secret leaks on self-hosted runners. |
-| `working-directory` | Not needed. We use `pixi run -w {name}` from root instead. |
+| `working-directory` | Not needed. We use `pixi run --manifest-path workspaces/{name}/pixi.toml` from root instead. |
 | Environment variables | `setup-pixi` exports pixi env vars to `$GITHUB_ENV`, available in later steps. |
 
 ### PR Validation Workflow
@@ -879,11 +879,12 @@ Using free GitHub runners for lightweight workspaces saves ~2 EUR/mo in Hetzner 
 ```
 ai-data-registry/
     pixi.toml                        # Root: shared tools (DuckDB, GDAL, gpio, s5cmd)
-    pixi.lock                        # Single lock for all workspaces
+    pixi.lock                        # Root lock for shared tools only
 
     workspaces/
         weather/                     # backend: hetzner
             pixi.toml                # [tool.registry] + deps + tasks
+            pixi.lock                # Workspace lock (committed, isolated)
             extract.py               # Any language
             README.md
 
@@ -948,7 +949,7 @@ No catalogs in git. No state files in git. Everything ephemeral is on S3 or work
 Helper scripts in `.github/scripts/` use **uv** with **PEP 723 inline script metadata**, not pixi. This keeps CI-only dependencies (croniter, duckdb Python API, huggingface-hub) separate from shared developer tools. See `MAINTAINING.md` (CI Scripts section) for the full script reference.
 
 **Two runtimes, clear separation:**
-- **pixi** runs workspace pipelines and shared tools (`pixi run -w {name} pipeline`)
+- **pixi** runs workspace pipelines and shared tools (`pixi run --manifest-path workspaces/{name}/pixi.toml pipeline`)
 - **uv** runs CI helper scripts (`uv run .github/scripts/validate_manifest.py`)
 
 ---
@@ -1008,7 +1009,7 @@ Issues discovered during architecture research that affect this design:
 | State tracking | Workflow artifacts (not git) | No git commits for ephemeral state. |
 | Task contract | `pipeline` entry point chains setup → extract → validate via `depends-on` | Single command for runners. Pixi stops on failure. Language-agnostic. Locally testable. |
 | Runner backends | Multi-backend via `[tool.registry.runner]`: github, hetzner, huggingface. Maintainer-managed, contributor picks from supported list. | Each workspace picks compute that fits its needs. New backends added by maintainer only. PR validation enforces supported list. |
-| Runner entry point | `pixi run -w {name} pipeline` (production), `pixi run -w {name} dry-run` (PR validation) | One command per mode. Workflow doesn't need to know task internals. Backend-agnostic contract. |
+| Runner entry point | `pixi run --manifest-path workspaces/{name}/pixi.toml pipeline` (production), `pixi run --manifest-path workspaces/{name}/pixi.toml dry-run` (PR validation) | One command per mode. Workflow doesn't need to know task internals. Backend-agnostic contract. |
 | CI script execution | `uv run` with PEP 723 inline deps (`# /// script` blocks) | CI-only deps (croniter, duckdb, huggingface-hub) stay separate from shared pixi tools. No lock file, no extra environment. |
 | Registry config | Central `.github/registry.config.toml` | Single source of truth for backends, flavors, storage secret names. Forks edit this file. |
 | PR staging isolation | Separate S3 prefix (`pr/{pr_number}/`) with auto-cleanup on PR close | Keeps test data separate from production. Maintainer can query staged data before approving merge. |

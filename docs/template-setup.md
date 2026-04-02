@@ -106,10 +106,8 @@ pixi run gdal --version
 mkdir -p workspaces/my-pipeline
 cd workspaces/my-pipeline
 pixi init . --channel conda-forge --platform osx-arm64 --platform linux-64 --platform win-64
+pixi add python
 cd ../..
-pixi workspace register --name my-pipeline --path workspaces/my-pipeline
-rm workspaces/my-pipeline/pixi.lock
-pixi add -w my-pipeline python
 ```
 
 Open a PR with the new workspace. The PR validation workflow should trigger automatically.

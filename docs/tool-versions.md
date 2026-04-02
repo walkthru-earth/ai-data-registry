@@ -23,8 +23,8 @@ Always prefer conda-forge. Fall back to PyPI only when not available.
 
 | Source | Root command | Workspace command | Config section |
 |--------|-------------|-------------------|---------------|
-| conda-forge | `pixi add <pkg>` | `pixi add -w <ws> <pkg>` | `[dependencies]` |
-| PyPI | `pixi add --pypi <pkg>` | `pixi add -w <ws> --pypi <pkg>` | `[pypi-dependencies]` |
+| conda-forge | `pixi add <pkg>` | `cd workspaces/<ws> && pixi add <pkg>` | `[dependencies]` |
+| PyPI | `pixi add --pypi <pkg>` | `cd workspaces/<ws> && pixi add --pypi <pkg>` | `[pypi-dependencies]` |
 
 **Decision flow:**
 1. `pixi search <pkg>`. If found, use conda-forge
