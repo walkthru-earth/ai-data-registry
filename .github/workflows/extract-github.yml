@@ -74,7 +74,7 @@ jobs:
           mkdir -p "$OUTPUT_DIR"
           pixi run -w "$WORKSPACE" pipeline
 
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.0.0
 
       - name: Upload output to all storages
         env:
