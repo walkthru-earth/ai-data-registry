@@ -37,7 +37,9 @@ The script will prompt for:
 It then:
 1. Replaces placeholders in `pixi.toml`, `CLAUDE.md`, and `.claude/` files
 2. Removes template-specific files (`setup.sh`, `setup.ps1`, `template-setup.yml`)
-3. Runs `pixi install` to set up the environment
+3. Offers to create `.env` with your S3 credentials (local development)
+4. Offers to push secrets to GitHub via `gh` CLI (CI/CD), auto-detecting the repo
+5. Runs `pixi install` to set up the environment
 
 ## 3. Configure Secrets
 
@@ -54,17 +56,30 @@ cp .env.example .env
 
 ### CI/CD (GitHub Secrets)
 
-Edit `.github/registry.config.toml` if needed (defaults work for most setups), then set repository secrets.
+The setup script detects `gh` CLI and offers to push `.env` secrets to your GitHub repo automatically. It auto-detects the repo from `gh repo view`. If you skip this step or don't have `gh` installed, set secrets manually:
 
-See [secrets-setup.md](secrets-setup.md) for the full list.
+```bash
+# Install gh CLI if needed:
+#   macOS: brew install gh
+#   Linux: curl -fsSL https://cli.github.com/packages/install.sh | bash
+#   Windows: winget install -e --id GitHub.cli
 
-**Minimum required:**
+# Authenticate and push all secrets from .env at once:
+gh auth login
+grep -v '^#' .env | grep '.' | while IFS='=' read -r k v; do [ -n "$v" ] && gh secret set "$k" --body "$v"; done
+```
+
+Or set secrets individually:
+
 ```bash
 gh secret set S3_ENDPOINT_URL --body "https://fsn1.your-objectstorage.com"
 gh secret set S3_BUCKET --body "my-registry"
+gh secret set S3_REGION --body "fsn1"
 gh secret set S3_WRITE_KEY_ID --body "<your-key>"
 gh secret set S3_WRITE_SECRET --body "<your-secret>"
 ```
+
+Edit `.github/registry.config.toml` if needed (defaults work for most setups). See [secrets-setup.md](secrets-setup.md) for the full list.
 
 ## 4. Choose Your Backends
 

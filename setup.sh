@@ -143,6 +143,64 @@ if [[ -f ".env.example" ]] && [[ ! -f ".env" ]]; then
   fi
 fi
 
+# --- Push secrets to GitHub (optional) ------------------------------------
+
+if [[ -f ".env" ]]; then
+  echo ""
+  # Check for gh CLI
+  if command -v gh &>/dev/null; then
+    echo -e "  ${GREEN}gh CLI found: $(gh --version | head -1)${NC}"
+
+    # Check if authenticated
+    if gh auth status &>/dev/null 2>&1; then
+      # Auto-detect repo
+      REPO=$(gh repo view --json nameWithOwner -q '.nameWithOwner' 2>/dev/null || true)
+
+      if [[ -n "$REPO" ]]; then
+        echo ""
+        read -rp "$(echo -e "${BOLD}Push secrets from .env to GitHub repo ${CYAN}${REPO}${NC}${BOLD}?${NC} [y/N]: ")" PUSH_SECRETS
+        if [[ "$PUSH_SECRETS" =~ ^[Yy]$ ]]; then
+          SECRET_COUNT=0
+          while IFS='=' read -r key value; do
+            # Skip empty lines, comments, and keys without values
+            [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "$value" ]] && continue
+            # Strip leading/trailing whitespace from key
+            key=$(echo "$key" | xargs)
+            if gh secret set "$key" --repo "$REPO" --body "$value" 2>/dev/null; then
+              echo -e "  ${GREEN}Set ${key}${NC}"
+              SECRET_COUNT=$((SECRET_COUNT + 1))
+            else
+              echo -e "  ${RED}Failed to set ${key}${NC}"
+            fi
+          done < .env
+          echo ""
+          echo -e "  ${GREEN}${SECRET_COUNT} secret(s) pushed to ${REPO}${NC}"
+        else
+          echo -e "  ${YELLOW}Skipped. Push secrets later with:${NC}"
+          echo "    grep -v '^#' .env | grep '.' | while IFS='=' read -r k v; do [ -n \"\$v\" ] && gh secret set \"\$k\" --repo $REPO --body \"\$v\"; done"
+        fi
+      else
+        echo -e "  ${YELLOW}Could not detect GitHub repo. Push secrets manually later.${NC}"
+      fi
+    else
+      echo -e "  ${YELLOW}gh CLI not authenticated. Run 'gh auth login' first to push secrets.${NC}"
+    fi
+  else
+    echo -e "  ${YELLOW}gh CLI not found (optional, for pushing secrets to GitHub).${NC}"
+    echo ""
+    echo "  Install gh CLI:"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      echo "    brew install gh                                    # macOS (Homebrew)"
+    fi
+    echo "    curl -fsSL https://cli.github.com/packages/install.sh | bash  # Linux"
+    echo ""
+    echo "  Then authenticate and push secrets:"
+    echo "    gh auth login"
+    echo "    grep -v '^#' .env | grep '.' | while IFS='=' read -r k v; do [ -n \"\$v\" ] && gh secret set \"\$k\" --body \"\$v\"; done"
+  fi
+fi
+
 # --- Install pixi environment ---------------------------------------------
 
 echo ""

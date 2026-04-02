@@ -138,6 +138,72 @@ if ((Test-Path '.env.example') -and -not (Test-Path '.env')) {
     }
 }
 
+# --- Push secrets to GitHub (optional) ------------------------------------
+
+if (Test-Path '.env') {
+    Write-Host ''
+    # Check for gh CLI
+    if (Get-Command gh -ErrorAction SilentlyContinue) {
+        $ghVer = (gh --version | Select-Object -First 1)
+        Write-Host "  gh CLI found: $ghVer" -ForegroundColor Green
+
+        # Check if authenticated
+        $authOk = $false
+        try { gh auth status 2>&1 | Out-Null; $authOk = $true } catch {}
+
+        if ($authOk) {
+            # Auto-detect repo
+            $Repo = try { gh repo view --json nameWithOwner -q '.nameWithOwner' 2>$null } catch { '' }
+
+            if ($Repo) {
+                Write-Host ''
+                $PushSecrets = Read-Host "Push secrets from .env to GitHub repo $Repo? [y/N]"
+                if ($PushSecrets -match '^[Yy]$') {
+                    $SecretCount = 0
+                    foreach ($line in Get-Content '.env') {
+                        $line = $line.Trim()
+                        # Skip empty lines and comments
+                        if (-not $line -or $line.StartsWith('#')) { continue }
+                        # Split on first = only
+                        $eqIdx = $line.IndexOf('=')
+                        if ($eqIdx -le 0) { continue }
+                        $key = $line.Substring(0, $eqIdx).Trim()
+                        $value = $line.Substring($eqIdx + 1).Trim()
+                        # Skip keys without values
+                        if (-not $value) { continue }
+                        try {
+                            gh secret set $key --repo $Repo --body $value 2>$null
+                            Write-Host "  Set $key" -ForegroundColor Green
+                            $SecretCount++
+                        } catch {
+                            Write-Host "  Failed to set $key" -ForegroundColor Red
+                        }
+                    }
+                    Write-Host ''
+                    Write-Host "  $SecretCount secret(s) pushed to $Repo" -ForegroundColor Green
+                } else {
+                    Write-Host "  Skipped. Push secrets later with:" -ForegroundColor Yellow
+                    Write-Host "    Get-Content .env | Where-Object { `$_ -and -not `$_.StartsWith('#') -and `$_.Contains('=') } | ForEach-Object { `$k,`$v = `$_.Split('=',2); if (`$v.Trim()) { gh secret set `$k.Trim() --repo $Repo --body `$v.Trim() } }"
+                }
+            } else {
+                Write-Host '  Could not detect GitHub repo. Push secrets manually later.' -ForegroundColor Yellow
+            }
+        } else {
+            Write-Host "  gh CLI not authenticated. Run 'gh auth login' first to push secrets." -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host '  gh CLI not found (optional, for pushing secrets to GitHub).' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host '  Install gh CLI:'
+        Write-Host '    winget install -e --id GitHub.cli                          # Windows (winget)'
+        Write-Host '    choco install gh                                           # Windows (Chocolatey)'
+        Write-Host ''
+        Write-Host '  Then authenticate and push secrets:'
+        Write-Host '    gh auth login'
+        Write-Host '    Get-Content .env | Where-Object { $_ -and -not $_.StartsWith("#") -and $_.Contains("=") } | ForEach-Object { $k,$v = $_.Split("=",2); if ($v.Trim()) { gh secret set $k.Trim() --body $v.Trim() } }'
+    }
+}
+
 # --- Install pixi environment ---------------------------------------------
 
 Write-Host ''
