@@ -23,7 +23,7 @@ Each script declares its own dependencies inline (PEP 723 `# /// script` block).
 - Discovers workspaces by scanning `workspaces/*/pixi.toml`
 - Resolves multi-storage configs and per-storage credentials
 - Builds S3 paths with `{owner}/{repo}/{branch}/` prefix (from GitHub env vars)
-- Provides `load_storage_configs()`, `get_workspace_storages()`, `build_s3_root()`, `build_catalog_path()` helpers
+- Provides `load_storage_configs()`, `get_workspace_storages()`, `build_s3_root()`, `build_global_catalog_path()` helpers
 - Validates workspace names (regex: `^[a-z][a-z0-9-]*$`)
 - Provides `quote_ident()` and `quote_literal()` for DuckDB SQL escaping (used by all scripts)
 - Validates S3 path inputs: repo prefix format, branch traversal (`..`), numeric PR numbers
@@ -39,9 +39,9 @@ Each script declares its own dependencies inline (PEP 723 `# /// script` block).
 | `check_catalog.py` | Layer 3: live DuckLake catalog compatibility |
 | `validate_output.py` | Layer 4: per-table Parquet quality checks |
 | `upload_output.py` | Multi-storage upload with owner/repo/branch prefix |
-| `merge_catalog.py` | Two-phase DuckLake merge per storage (--storage flag) |
+| `merge_catalog.py` | Scan S3, register new files in global catalog (--storage flag) |
 | `find_due.py` | Scheduler: evaluate cron vs state, dispatch backends |
-| `maintenance.py` | Weekly CHECKPOINT on workspace catalogs |
+| `maintenance.py` | Weekly CHECKPOINT on global catalog (with compaction) |
 | `submit_hf_job.py` | HuggingFace Jobs: submit container, poll status |
 | `test_local_merge.py` | Local DuckLake merge test (no S3) |
 

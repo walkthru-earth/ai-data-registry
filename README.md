@@ -181,10 +181,8 @@ flowchart TD
     end
 
     subgraph Catalog[DuckLake Federation]
-        WC[Workspace catalog]
         GC[Global catalog]
-        S5 --> WC
-        WC -->|"ducklake_add_data_files()"| GC
+        S5 -->|"ducklake_add_data_files()"| GC
     end
 
     GC -->|query| Q["SELECT * FROM global.schema.table"]

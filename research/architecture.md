@@ -1,13 +1,15 @@
 # Data Registry Platform Architecture
 
-A git-native, PR-driven data platform. Each workspace is an isolated data pipeline with its own language, dependencies, and compute backend. Contributors add workspaces via PRs. Maintainers manage the supported infrastructure. DuckLake federates all workspace catalogs into one queryable global catalog via zero-copy file registration.
+> **Note (2026-04-02):** Per-workspace catalogs have been removed. The platform now uses a single global catalog. The merge script scans S3 directly and registers files in the global catalog. This eliminates the shared-file ownership problem and enables safe compaction. Some sections below still reference the old two-catalog design as historical context.
+
+A git-native, PR-driven data platform. Each workspace is an isolated data pipeline with its own language, dependencies, and compute backend. Contributors add workspaces via PRs. Maintainers manage the supported infrastructure. DuckLake federates all workspace outputs into one queryable global catalog via direct S3 file registration.
 
 ## Design Principles
 
 1. **Git is the source of truth** for pipeline definitions, schedules, and workspace config
 2. **Pixi is the runtime** for reproducible, cross-platform, multi-language environments
-3. **Each workspace owns its own DuckLake catalog** on S3 (DuckDB backend, not SQLite, no PostgreSQL)
-4. **One global catalog** is assembled by zero-copy `ducklake_add_data_files()` from workspace catalogs
+3. **One global DuckLake catalog** on S3 (DuckDB backend, not SQLite, no PostgreSQL) is the single source of truth
+4. **The merge script scans S3** for Parquet files and registers them directly in the global catalog via `ducklake_add_data_files()`
 5. **All catalogs live on S3**, pulled at runtime, never stored in git
 6. **Free GitHub runners orchestrate**, Hetzner runners do the heavy lifting
 7. **PR-based contribution** model for adding/modifying data sources (like conda-forge recipes)

@@ -43,8 +43,7 @@ All paths are prefixed with `{owner}/{repo}/{branch}/` derived from GitHub env v
 ```
 s3://{bucket}/{owner}/{repo}/
 ├── {branch}/
-│   ├── .catalogs/{workspace}.duckdb
-│   ├── catalog.duckdb
+│   ├── catalog.duckdb                           # global catalog
 │   └── {schema}/{table}/{timestamp}.parquet
 └── pr/{pr_number}/{workspace}/{table}.parquet   (no branch prefix)
 ```
@@ -54,7 +53,7 @@ s3://{bucket}/{owner}/{repo}/
 - Workspaces declare `storage = "eu-hetzner"` or `storage = ["eu-hetzner", "us-east"]`
 - If omitted, the first defined storage is the default
 - Data is replicated to all declared storages simultaneously
-- Each storage has its own independent DuckLake catalogs
+- Each storage has its own independent global DuckLake catalog
 - Each storage needs its own set of 5 GitHub secrets (endpoint, bucket, region, key, secret)
 
 ## When Editing

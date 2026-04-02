@@ -95,9 +95,9 @@ SELECT * FROM ducklake_list_files('global', 'states');
 SELECT COUNT(*) FROM global."opensky-flights".states;
 SELECT * FROM global."test-minimal".data LIMIT 5;
 
--- Remote read-write (for CI merge scripts)
-ATTACH 'ducklake:s3://bucket/{owner}/{repo}/{branch}/.catalogs/weather.duckdb' AS weather
-    (DATA_PATH 's3://bucket/{owner}/{repo}/{branch}/', READ_WRITE);
+-- Remote read-write (for CI merge scripts, uses the global catalog)
+ATTACH 'ducklake:s3://bucket/{owner}/{repo}/{branch}/catalog.duckdb' AS global_cat
+    (DATA_PATH 's3://bucket/{owner}/{repo}/{branch}/');
 ```
 
 **When to use `SET s3_*` vs `CREATE SECRET`:**
@@ -346,23 +346,17 @@ Partition layout changes are evolutionary. Only new data uses the updated scheme
 - `ducklake_add_data_files` accepts only single files (not globs)
 - `hive_file_pattern` / `require_commit_message` must be set with boolean values, not strings
 
-## CRITICAL: Shared-ownership compaction danger
+## Shared-ownership compaction danger
 
 **Verified 2026-04-01 with DuckDB 1.5.1 / DuckLake spec 0.4.**
 
-When using `ducklake_add_data_files` to register the same Parquet files in multiple catalogs (e.g., workspace + global), compaction on one catalog can **delete files still referenced by the other**.
+> **Note:** This project uses a single global catalog, so shared ownership does not apply. This section documents a general DuckLake pitfall for reference.
 
-**Reproduction:**
-1. Create workspace catalog, register files via `ducklake_add_data_files`
-2. Register the SAME files in global catalog (zero-copy merge)
-3. Run `ducklake_merge_adjacent_files('workspace')` on workspace
-4. Run `ducklake_expire_snapshots` + `ducklake_cleanup_old_files` on workspace
-5. Result: original files are DELETED from disk/S3
-6. Global catalog still references the deleted files, queries fail
+When using `ducklake_add_data_files` to register the same Parquet files in multiple catalogs, compaction on one catalog can **delete files still referenced by the other**.
 
-**Root cause:** `ducklake_add_data_files` transfers ownership. DuckLake tracks files for lifecycle management. When workspace compaction merges files, the originals are scheduled for deletion. `cleanup_old_files` then deletes them from storage. The global catalog has no knowledge of this.
+**Root cause:** `ducklake_add_data_files` transfers ownership. DuckLake tracks files for lifecycle management. When compaction merges files, the originals are scheduled for deletion. `cleanup_old_files` then deletes them from storage. Other catalogs referencing those files have no knowledge of this.
 
-**Mitigation:** Set `auto_compact = false` on any catalog whose files are shared with another catalog. If compaction is needed, only run it on catalogs that exclusively own their files, or re-sync dependent catalogs afterward.
+**Mitigation:** Either use a single catalog (as this project does), or set `auto_compact = false` on any catalog whose files are shared with another.
 
 Test script: `.github/scripts/test_ducklake_api.py` (TEST 7 demonstrates this).
 

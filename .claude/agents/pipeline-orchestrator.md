@@ -20,7 +20,7 @@ This is a git-native, PR-driven data platform. Full design: `research/architectu
 - Workspaces declare compute needs in `[tool.registry.runner]` (github, hetzner, huggingface)
 - Workspace code writes Parquet to local `$OUTPUT_DIR/`, never directly to S3
 - The workflow uploads via `s5cmd` with WRITE creds on the workspace's behalf
-- DuckLake federates all workspace catalogs into one global catalog via zero-copy `ducklake_add_data_files()`
+- DuckLake global catalog registers all workspace Parquet files via `ducklake_add_data_files()`
 - PR validation runs `dry-run` on free GitHub runners regardless of production backend
 
 ## Workflow

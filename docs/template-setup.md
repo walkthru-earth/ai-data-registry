@@ -125,7 +125,7 @@ git push
 - **11 GitHub Actions workflows** (validation, extraction, scheduling, maintenance, Docker builds)
 - **10 CI scripts** (validation layers, catalog merge, scheduler, HF job submission)
 - **3 compute backends** (GitHub free, Hetzner ARM, HuggingFace GPU)
-- **DuckLake federation** (per-workspace catalogs, global catalog, zero-copy merge)
+- **DuckLake federation** (single global catalog, S3-scan-based file registration)
 - **Claude Code integration** (8 rules, 7 commands, 6 skills, 3 agents)
 - **Reference workspace** (`workspaces/test-minimal/`)
 

@@ -115,7 +115,6 @@ All S3 paths are prefixed with `{owner}/{repo}/{branch}/` to prevent cross-repo 
 graph TB
     subgraph "S3 Bucket"
         subgraph "owner/repo/main/"
-            CAT_DIR[".catalogs/"]
             GLOBAL["catalog.duckdb"]
             SCHEMA1["weather/observations/*.parquet"]
             SCHEMA2["opensky/states/*.parquet"]

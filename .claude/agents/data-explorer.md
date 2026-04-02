@@ -44,7 +44,7 @@ For ArcGIS REST endpoints, load macros first: `pixi run duckdb -init ".claude/sk
 
 ### DuckLake Remote Catalogs
 
-Query the global or workspace catalogs directly from S3 (no download needed). **Must use `CREATE SECRET`, not `SET s3_*` variables.**
+Query the global catalog directly from S3 (no download needed). **Must use `CREATE SECRET`, not `SET s3_*` variables.**
 
 ```bash
 pixi run duckdb -c "
