@@ -116,23 +116,13 @@ def list_registered_files(con, catalog: str, schema: str, table: str) -> set[str
 def scan_s3_files(con, data_path: str, schema: str, table: str) -> list[str]:
     """Discover Parquet files on S3 for a given table.
 
-    Looks in the new layout: s3://bucket/{prefix}/{schema}/{table}/*.parquet
-    Also checks legacy flat layout: s3://bucket/{prefix}/{schema}/{table}.parquet
+    Looks for: s3://bucket/{prefix}/{schema}/{table}/*.parquet
     """
     found = []
 
-    # New layout: table subdirectory with timestamped files
     table_glob = f"{data_path}{schema}/{table}/*.parquet"
     try:
         rows = con.execute(f"SELECT file FROM glob({quote_literal(table_glob)})").fetchall()
-        found.extend(r[0] for r in rows)
-    except Exception:
-        pass
-
-    # Legacy layout: flat file named after the table
-    legacy_path = f"{data_path}{schema}/{table}.parquet"
-    try:
-        rows = con.execute(f"SELECT file FROM glob({quote_literal(legacy_path)})").fetchall()
         found.extend(r[0] for r in rows)
     except Exception:
         pass
@@ -158,13 +148,23 @@ def sync_workspace_table(con, data_path: str, schema: str, table: str) -> int:
         table_exists = False
 
     if not table_exists:
-        # Create table from the first file's schema
+        # Create table from the first readable file's schema
         con.execute(f'CREATE SCHEMA IF NOT EXISTS ws.{quote_ident(schema)}')
-        con.execute(f"""
-            CREATE TABLE ws.{quote_ident(schema)}.{quote_ident(table)} AS
-            SELECT * FROM read_parquet({quote_literal(s3_files[0])}) LIMIT 0
-        """)
-        print(f"  Created table {schema}.{table} in workspace catalog")
+        created = False
+        for candidate in s3_files:
+            try:
+                con.execute(f"""
+                    CREATE TABLE ws.{quote_ident(schema)}.{quote_ident(table)} AS
+                    SELECT * FROM read_parquet({quote_literal(candidate)}) LIMIT 0
+                """)
+                print(f"  Created table {schema}.{table} in workspace catalog")
+                created = True
+                break
+            except Exception as e:
+                print(f"  WARNING: Cannot read {candidate}, trying next file: {e}")
+        if not created:
+            print(f"  ERROR: No readable files for {schema}.{table}, skipping")
+            return 0
 
     # Find unregistered files
     registered = list_registered_files(con, "ws", schema, table)
