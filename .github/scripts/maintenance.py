@@ -51,6 +51,8 @@ def maintain_global_catalog(
     result = s5cmd_for_storage(storage_name, "cp", global_s3, local_path)
     if result.returncode != 0:
         print(f"    WARNING: No global catalog found at {global_s3}, skipping.")
+        if result.stderr:
+            print(f"    s5cmd stderr: {result.stderr.strip()}")
         return True
 
     if dry_run:
@@ -111,9 +113,23 @@ def maintain_global_catalog(
         con.execute("CALL global_cat.set_option('expire_older_than', '30 days')")
         con.execute("CALL global_cat.set_option('delete_older_than', '7 days')")
 
+        # Log pre-CHECKPOINT state
+        snap_count = con.execute("SELECT COUNT(*) FROM ducklake_snapshots('global_cat')").fetchone()[0]
+        table_info = con.execute("SELECT table_name, file_count, file_size_bytes FROM ducklake_table_info('global_cat')").fetchall()
+        print(f"    Pre-CHECKPOINT: {snap_count} snapshots")
+        for name, files, size_bytes in table_info:
+            print(f"      {name}: {files} files, {size_bytes / 1024 / 1024:.1f} MB")
+
         con.execute("USE global_cat")
         con.execute("CHECKPOINT")
-        print(f"    CHECKPOINT completed (compaction enabled, sole file owner).")
+
+        # Log post-CHECKPOINT state
+        snap_count_after = con.execute("SELECT COUNT(*) FROM ducklake_snapshots('global_cat')").fetchone()[0]
+        table_info_after = con.execute("SELECT table_name, file_count, file_size_bytes FROM ducklake_table_info('global_cat')").fetchall()
+        print(f"    Post-CHECKPOINT: {snap_count_after} snapshots (expired {snap_count - snap_count_after})")
+        for name, files, size_bytes in table_info_after:
+            print(f"      {name}: {files} files, {size_bytes / 1024 / 1024:.1f} MB")
+        print(f"    CHECKPOINT completed (all 6 steps, sole file owner).")
 
     except duckdb.Error as e:
         print(f"    WARNING: Maintenance failed: {e}")

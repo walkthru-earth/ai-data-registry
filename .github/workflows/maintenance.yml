@@ -28,6 +28,8 @@ jobs:
           S3_ENDPOINT_URL: ${{ secrets.S3_ENDPOINT_URL }}
           S3_BUCKET: ${{ secrets.S3_BUCKET }}
           S3_REGION: ${{ secrets.S3_REGION }}
+          S3_WRITE_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
+          S3_WRITE_SECRET: ${{ secrets.S3_WRITE_SECRET }}
           AWS_ACCESS_KEY_ID: ${{ secrets.S3_WRITE_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_WRITE_SECRET }}
         run: |
