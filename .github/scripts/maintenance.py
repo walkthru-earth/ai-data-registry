@@ -105,6 +105,9 @@ def maintain_global_catalog(
     try:
         # Global catalog is the sole owner of all data files, so compaction
         # (merge_adjacent_files, rewrite_data_files) is safe.
+        # auto_compact must be true for CHECKPOINT to run all 6 steps,
+        # including ducklake_delete_orphaned_files (cleans up replace-mode leftovers).
+        con.execute("CALL global_cat.set_option('auto_compact', true)")
         con.execute("CALL global_cat.set_option('expire_older_than', '30 days')")
         con.execute("CALL global_cat.set_option('delete_older_than', '7 days')")
 

@@ -165,14 +165,14 @@ def get_new_files(ws_catalog, global_catalog, schema, table):
 **Rule: exclude the global catalog from bulk maintenance.**
 
 ```sql
--- Exclude all global catalog tables from bulk maintenance calls.
--- Note: auto_compact does NOT trigger automatic compaction. DuckLake compaction is always explicit.
--- This flag controls whether tables are INCLUDED when maintenance functions (CHECKPOINT,
--- ducklake_merge_adjacent_files, etc.) are called WITHOUT specifying a table name.
-CALL global.set_option('auto_compact', false);
+-- Global catalog is the sole file owner (single-catalog architecture).
+-- auto_compact must be true for CHECKPOINT to run all 6 maintenance steps,
+-- including ducklake_delete_orphaned_files (cleans up replace-mode leftovers on S3).
+-- Previously set to false in the old multi-catalog era to prevent shared-ownership issues.
+CALL global.set_option('auto_compact', true);
 ```
 
-Run compaction only on individual workspace catalogs (which own their data paths). The global catalog is a zero-copy index, not a data owner.
+The global catalog owns all data files. Compaction (merge_adjacent_files, rewrite_data_files, delete_orphaned_files) is safe and required for S3 cleanup.
 
 ---
 
@@ -855,7 +855,7 @@ CALL ducklake_cleanup_old_files('ws', older_than => now() - INTERVAL '7 days');
 CALL ducklake_delete_orphaned_files('ws', older_than => now() - INTERVAL '7 days');
 ```
 
-The global catalog has `auto_compact = false`. It only gets rebuilt if it becomes corrupted or bloated.
+The global catalog has `auto_compact = true` (sole file owner). Weekly maintenance runs CHECKPOINT to expire snapshots, merge files, and delete orphans from replace-mode workspaces.
 
 ---
 
@@ -987,7 +987,7 @@ Issues discovered during architecture research that affect this design:
 | Data change feed | `table_changes()` for downstream CDC |
 | Sorted tables | Spatial data sorted for fast queries |
 | Encryption | Optional encrypted Parquet for sensitive datasets |
-| `set_option('auto_compact', false)` | Exclude global catalog tables from bulk maintenance calls, preventing file deletion |
+| `set_option('auto_compact', true)` | Enable all CHECKPOINT steps including orphan cleanup (global catalog is sole file owner) |
 | `CHECKPOINT` | All-in-one maintenance: expire snapshots, merge files, rewrite deletes, cleanup (v0.4+) |
 | `ducklake_delete_orphaned_files()` | Clean up files left by crashed writes (issue #300 mitigation) |
 | Data inlining | Sub-millisecond writes for small datasets (v0.4+, threshold: 10 rows) |
@@ -1000,9 +1000,9 @@ Issues discovered during architecture research that affect this design:
 | Question | Decision | Rationale |
 |----------|----------|-----------|
 | Catalog storage | DuckDB catalog on S3, pulled at runtime | No git bloat, no PostgreSQL, no infra. Serial merge queue handles locking. |
-| Catalog topology | One DuckDB catalog per workspace + one global | Each workspace is autonomous. Global is a zero-copy federation layer. |
+| Catalog topology | Single global DuckDB catalog | Simplified from per-workspace catalogs. Global is the sole file owner. |
 | Merge method | `ducklake_add_data_files` (not `COPY FROM DATABASE`) | Zero-copy, incremental, works on 2nd+ run. COPY FROM DATABASE fails on re-run and copies data. |
-| Compaction | Workspace catalogs only. Global has `auto_compact = false`. | Prevents global catalog from deleting workspace-owned files on S3. |
+| Compaction | Global catalog with `auto_compact = true` | Safe because global catalog is the sole file owner. Weekly CHECKPOINT cleans up orphans. |
 | Schema.table ownership | One workspace owns one schema.table | Prevents corruption from multiple writers. Enforced in PR checks. |
 | Licensing | Required `[tool.registry.license]` with code + data SPDX | Legal clarity. Mixed sources must declare per-source. |
 | S3 write isolation | Workspace code gets READ-ONLY creds. Workflow uploads via s5cmd (parallel, 256 workers). | Safest. No workspace can touch another's prefix or any catalog. |

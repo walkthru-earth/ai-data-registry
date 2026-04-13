@@ -276,7 +276,7 @@ USE my_lake;
 CHECKPOINT;
 ```
 
-Respects `auto_compact` setting. If `auto_compact = false`, steps 1/3/4 are skipped.
+Respects `auto_compact` setting. If `auto_compact = false`, steps 1/3/4/6 are skipped (only expire_snapshots and cleanup_old_files run).
 
 ### Individual maintenance functions
 
