@@ -15,7 +15,7 @@ dry-run = { cmd = "python extract.py", env = { DRY_RUN = "1" } }
 python = ">=3.14.3,<3.15"
 
 [pypi-dependencies]
-duckdb = ">=1.5.1"
+duckdb = ">=1.5.2"
 
 [tool.registry]
 description = "Global weather, forecasts, and air quality from Open-Meteo API for ~3,000 cities (pop >= 200K) across 150+ countries"

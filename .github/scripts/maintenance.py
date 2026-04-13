@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "duckdb>=1.5.1",
+#   "duckdb>=1.5.2",
 # ]
 # ///
 """Weekly maintenance for the global DuckLake catalog.

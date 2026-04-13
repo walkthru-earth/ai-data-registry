@@ -2,14 +2,14 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "duckdb>=1.5.1",
+#   "duckdb>=1.5.2",
 #   "pytz",
 # ]
 # ///
 """Comprehensive DuckLake API tests for ai-data-registry review.
 
 Tests every DuckLake API used in merge_catalog.py, maintenance.py,
-check_catalog.py, and test_local_merge.py against DuckDB 1.5.1 / DuckLake spec 0.4.
+check_catalog.py, and test_local_merge.py against DuckDB 1.5.2 / DuckLake spec 1.0.
 
 Generates fake data locally, no S3 needed.
 

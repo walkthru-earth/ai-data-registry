@@ -239,7 +239,7 @@ All tools run through pixi. Never run directly.
 | Tool | Command |
 |------|---------|
 | GDAL >=3.12.3 | `pixi run gdal ...` |
-| DuckDB >=1.5.1 | `pixi run duckdb ...` |
+| DuckDB >=1.5.2 | `pixi run duckdb ...` |
 | gpio 1.0.0b2 | `pixi run gpio ...` |
 | s5cmd >=2.3.0 | `pixi run s5cmd ...` |
 | Python >=3.12 | `pixi run python ...` |

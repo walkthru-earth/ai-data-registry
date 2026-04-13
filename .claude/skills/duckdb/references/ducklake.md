@@ -9,7 +9,7 @@ INSTALL ducklake;
 LOAD ducklake;
 ```
 
-Requires DuckDB v1.3.0+. Current spec version: **0.4** (DuckDB 1.5.1).
+Requires DuckDB v1.3.0+. Current spec version: **1.0** (DuckDB 1.5.2).
 
 ## Choosing a catalog backend
 
@@ -45,7 +45,7 @@ ATTACH 'ducklake:metadata.ducklake' AS my_lake
     (DATA_PATH 's3://my-bucket/lake/');
 ```
 
-### ATTACH options (verified DuckDB 1.5.1 / spec 0.4)
+### ATTACH options (verified DuckDB 1.5.2 / spec 1.0)
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -62,7 +62,7 @@ ATTACH 'ducklake:metadata.ducklake' AS my_lake
 | `METADATA_SCHEMA` | main | Schema for DuckLake metadata tables |
 | `METADATA_PATH` | (from connect string) | Connection string to metadata catalog |
 
-**IMPORTANT**: `MIGRATE_IF_REQUIRED` is NOT supported in DuckLake (DuckDB 1.5.1). Use `AUTOMATIC_MIGRATION` instead. Tested and verified 2026-04-01.
+**IMPORTANT**: `MIGRATE_IF_REQUIRED` is NOT supported in DuckLake. Use `AUTOMATIC_MIGRATION` instead. In DuckLake 1.0, attaching a catalog with a version mismatch throws an error unless `AUTOMATIC_MIGRATION` is set to true.
 
 ## Remote S3 Access (DuckLake + httpfs)
 
@@ -121,7 +121,7 @@ SELECT * FROM tbl;
 UPDATE tbl SET name = 'world' WHERE id = 1;
 ```
 
-## DuckLake functions (verified DuckDB 1.5.1)
+## DuckLake functions (verified DuckDB 1.5.2)
 
 ### ducklake_add_data_files
 
@@ -177,6 +177,35 @@ SELECT * FROM ducklake_table_info('catalog');
 -- Returns: table_name, schema_id, table_id, table_uuid, file_count, file_size_bytes, delete_file_count, delete_file_size_bytes
 ```
 
+### ducklake_settings (new in 1.0)
+
+```sql
+SELECT * FROM ducklake_settings('catalog');
+-- Or: FROM my_lake.settings();
+-- Returns: dbms_type, extension_version, data_path
+```
+
+### ducklake_flush_inlined_data (new in 1.0)
+
+Materializes inlined data to Parquet files.
+
+```sql
+CALL ducklake_flush_inlined_data('catalog');
+CALL ducklake_flush_inlined_data('catalog', schema_name => 'my_schema');
+CALL ducklake_flush_inlined_data('catalog', schema_name => 'my_schema', table_name => 'tbl');
+-- Returns: schema_name, table_name, rows_flushed
+```
+
+### ducklake_rewrite_data_files (new in 1.0)
+
+Rewrites files with many deletions (default threshold: 95% deleted).
+
+```sql
+CALL ducklake_rewrite_data_files('catalog');
+CALL ducklake_rewrite_data_files('catalog', delete_threshold => 0.5);
+-- Returns: schema_name, table_name, files_processed, files_created
+```
+
 ### ducklake_table_insertions / ducklake_table_deletions / ducklake_table_changes
 
 ```sql
@@ -204,7 +233,7 @@ CALL my_lake.set_option('auto_compact', false, schema => 'my_schema', table_name
 FROM my_lake.options();
 ```
 
-### Available options (verified DuckDB 1.5.1)
+### Available options (verified DuckDB 1.5.2)
 
 | Option | Type | Default | Scopes | Description |
 |--------|------|---------|--------|-------------|
@@ -323,7 +352,14 @@ ALTER TABLE tbl SET PARTITIONED BY (year(ts), month(ts));
 ALTER TABLE tbl RESET PARTITIONED BY;
 ```
 
-Supported transforms: `identity`, `year`, `month`, `day`, `hour`.
+Supported transforms: `identity`, `year`, `month`, `day`, `hour`, `bucket(N, col)`.
+
+```sql
+-- Bucket partitioning (Iceberg-compatible, murmur3 hash)
+ALTER TABLE tbl SET PARTITIONED BY (bucket(16, id));
+-- Combine transforms
+ALTER TABLE tbl SET PARTITIONED BY (year(ts), bucket(8, region));
+```
 
 Partition layout changes are evolutionary. Only new data uses the updated scheme. Existing data keeps its original layout.
 
@@ -335,7 +371,9 @@ Partition layout changes are evolutionary. Only new data uses the updated scheme
 - **Cloud storage**: DATA_PATH supports S3, GCS, Azure, R2, NFS
 - **Geometry support**: spatial columns stored natively (v0.3+)
 - **Data inlining**: sub-millisecond writes for small data (default: <= 10 rows)
-- **Partitioning**: Hive-style with temporal transforms (v0.4)
+- **Partitioning**: Hive-style with temporal transforms, bucket partitioning (v1.0)
+- **Sorted tables**: expression-based sort keys with automatic sorting during compaction (v1.0)
+- **Deletion vectors**: experimental Iceberg v3 compatible roaring bitmaps (v1.0)
 - **Data change feed**: track insertions/deletions/changes between snapshots
 
 ## Limitations
@@ -348,7 +386,7 @@ Partition layout changes are evolutionary. Only new data uses the updated scheme
 
 ## Shared-ownership compaction danger
 
-**Verified 2026-04-01 with DuckDB 1.5.1 / DuckLake spec 0.4.**
+**Verified 2026-04-13 with DuckDB 1.5.2 / DuckLake spec 1.0.**
 
 > **Note:** This project uses a single global catalog, so shared ownership does not apply. This section documents a general DuckLake pitfall for reference.
 

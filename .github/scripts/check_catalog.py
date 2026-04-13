@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "duckdb>=1.5.1",
+#   "duckdb>=1.5.2",
 # ]
 # ///
 """Layer 3: Live catalog check against the global DuckLake catalog on S3.
@@ -98,7 +98,7 @@ def check_catalog(workspace_name: str) -> list[str]:
             con.execute("INSTALL ducklake; LOAD ducklake;")
 
             try:
-                con.execute(f"ATTACH {quote_literal('ducklake:' + local_catalog)} AS global_cat (READ_ONLY)")
+                con.execute(f"ATTACH {quote_literal('ducklake:' + local_catalog)} AS global_cat (READ_ONLY, AUTOMATIC_MIGRATION true)")
             except duckdb.Error as e:
                 print(f"  WARNING: Could not attach global catalog: {e}")
                 return errors

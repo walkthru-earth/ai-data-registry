@@ -13,7 +13,7 @@ nodejs = ">=22.22.2,<24.15"
 pnpm = ">=10.32.1,<11"
 gdal = ">=3.12.3,<4"
 libgdal-arrow-parquet = ">=3.12.3,<4"
-duckdb = ">=1.5.1,<2"
+duckdb = ">=1.5.2,<2"
 s5cmd = ">=2.3.0,<3"
 
 [pypi-dependencies]

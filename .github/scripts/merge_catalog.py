@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "duckdb>=1.5.1",
+#   "duckdb>=1.5.2",
 # ]
 # ///
 """Merge workspace data into the global DuckLake catalog.
@@ -305,7 +305,8 @@ def merge_workspace_storage(
     try:
         con.execute(f"""
             ATTACH {quote_literal('ducklake:' + _global_catalog_local)} AS global_cat (
-                DATA_PATH {quote_literal(data_path)}
+                DATA_PATH {quote_literal(data_path)},
+                AUTOMATIC_MIGRATION true
             )
         """)
     except duckdb.Error as e:

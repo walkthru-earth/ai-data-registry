@@ -122,7 +122,7 @@ sequenceDiagram
 - **No catalog in git**: All catalogs live on S3. Pulled at runtime, pushed after mutation.
 - **No PostgreSQL**: DuckDB backend is fine because only one process writes to each catalog at a time
 
-### Validated Behavior (DuckDB 1.5.1 + DuckLake + DuckDB backend)
+### Validated Behavior (DuckDB 1.5.2 + DuckLake 1.0 + DuckDB backend)
 
 | Behavior | Tested Result |
 |----------|--------------|

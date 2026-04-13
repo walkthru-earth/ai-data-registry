@@ -5,7 +5,7 @@ All tools are managed by the root `pixi.toml` and run via `pixi run <tool>`. Nev
 | Tool | Version | Command | Purpose |
 |------|---------|---------|---------|
 | GDAL | >=3.12.3 | `pixi run gdal ...` | Unified vector/raster CLI (v3.11+ new CLI, NOT legacy ogr2ogr/gdalinfo/ogrinfo) |
-| DuckDB | >=1.5.1 | `pixi run duckdb ...` | Analytical SQL engine with spatial extension |
+| DuckDB | >=1.5.2 | `pixi run duckdb ...` | Analytical SQL engine with spatial extension |
 | gpio | 1.0.0b2 | `pixi run gpio ...` | GeoParquet optimization/validation. Install: `pixi add --pypi geoparquet-io --pre` |
 | libgdal-arrow-parquet | >=3.12.3 | (GDAL driver) | Parquet I/O via Arrow. Version MUST match GDAL version |
 | Python | >=3.12.13 | `pixi run python ...` | Default runtime |

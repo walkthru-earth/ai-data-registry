@@ -20,7 +20,7 @@ paths:
 ## Platform-Specific Dependencies
 ```toml
 [target.unix.dependencies]
-libduckdb = ">=1.5.1,<2"
+libduckdb = ">=1.5.2,<2"
 
 [target.osx-arm64.dependencies]
 mac-only-tool = ">=1.0"
