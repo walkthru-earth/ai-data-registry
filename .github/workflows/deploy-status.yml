@@ -1,0 +1,96 @@
+name: "Deploy Watch Center"
+
+# Builds the workflows-status/ Lit+Vite app and publishes it to GitHub Pages
+# under https://<owner>.github.io/<repo>/workflows-status/.
+#
+# Security:
+#   No `${{ }}` expressions are used inside any `run:` block. The repo name is
+#   derived from the built-in `GITHUB_REPOSITORY` env var via shell parameter
+#   expansion, so untrusted input cannot reach the shell here.
+#
+# Runtime model:
+#   The app fetches workspace manifests and workflow runs live via the public
+#   GitHub API, so this workflow only needs to re-run when the app source
+#   itself changes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "workflows-status/**"
+      - ".github/workflows/deploy-status.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workflows-status
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        working-directory: .
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: workflows-status/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Derive the GitHub Pages base path from the built-in GITHUB_REPOSITORY
+      # env var so this workflow works unmodified for any fork / template user.
+      # Final URL: https://<owner>.github.io/<repo>/workflows-status/
+      - name: Compute base path
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          BASE="/${REPO_NAME}/workflows-status/"
+          echo "BASE=${BASE}" >> "$GITHUB_ENV"
+          echo "Using Vite base: ${BASE}"
+
+      - name: Typecheck
+        run: pnpm exec tsc
+
+      - name: Build
+        run: pnpm exec vite build --base "$BASE"
+
+      # Move the built site under workflows-status/ so the Pages artifact, which
+      # is served at https://<owner>.github.io/<repo>/, exposes this app at
+      # https://<owner>.github.io/<repo>/workflows-status/.
+      - name: Stage Pages artifact
+        working-directory: .
+        run: |
+          mkdir -p _site/workflows-status
+          cp -R workflows-status/dist/. _site/workflows-status/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
